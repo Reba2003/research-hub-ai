@@ -1,11 +1,15 @@
 import { useState, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Upload, FileText, Video, Music, Link, Type, Image } from 'lucide-react';
+import { Upload, Link, Type, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Textarea } from '@/components/ui/textarea';
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogTrigger } from '@/components/ui/dialog';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { useAuth } from '@/hooks/useAuth';
+import { uploadFile, getFileType } from '@/lib/storage';
+import { createSource } from '@/lib/api';
+import { toast } from 'sonner';
 import type { Source, SourceType } from '@/types';
 
 interface UploadZoneProps {
@@ -14,10 +18,12 @@ interface UploadZoneProps {
 
 export function UploadZone({ onUpload }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
   const [textContent, setTextContent] = useState('');
   const [textTitle, setTextTitle] = useState('');
   const [dialogOpen, setDialogOpen] = useState(false);
+  const { user } = useAuth();
 
   const handleDragOver = useCallback((e: React.DragEvent) => {
     e.preventDefault();
@@ -29,7 +35,7 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
     setIsDragging(false);
   }, []);
 
-  const getFileType = (file: File): SourceType => {
+  const getMimeFileType = (file: File): SourceType => {
     if (file.type.includes('pdf')) return 'pdf';
     if (file.type.includes('video')) return 'video';
     if (file.type.includes('audio')) return 'audio';
@@ -37,63 +43,142 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
     return 'text';
   };
 
+  const handleFileUpload = async (files: File[]) => {
+    if (!user) {
+      toast.error('Please sign in to upload files');
+      return;
+    }
+
+    setIsUploading(true);
+
+    for (const file of files) {
+      try {
+        // Check file type
+        const storageType = getFileType(file.type);
+        if (!storageType) {
+          toast.error(`Unsupported file type: ${file.name}`);
+          continue;
+        }
+
+        // Upload to storage
+        const uploadResult = await uploadFile(file, user.id);
+        if (!uploadResult) {
+          toast.error(`Failed to upload: ${file.name}`);
+          continue;
+        }
+
+        // Create source record in database
+        const source = await createSource({
+          name: file.name,
+          type: uploadResult.fileType,
+          file_url: uploadResult.fileUrl,
+          file_path: uploadResult.filePath,
+          size: file.size,
+        });
+
+        if (source) {
+          onUpload({
+            name: source.name,
+            type: source.type,
+            enabled: source.enabled,
+            status: source.status,
+            size: source.size,
+          });
+          toast.success(`Uploaded: ${file.name}`);
+        }
+      } catch (error) {
+        console.error('Upload error:', error);
+        toast.error(`Failed to upload: ${file.name}`);
+      }
+    }
+
+    setIsUploading(false);
+  };
+
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     setIsDragging(false);
-
     const files = Array.from(e.dataTransfer.files);
-    files.forEach((file) => {
-      onUpload({
-        name: file.name,
-        type: getFileType(file),
-        enabled: true,
-        status: 'processing',
-        size: file.size,
-      });
-    });
-  }, [onUpload]);
+    handleFileUpload(files);
+  }, [user]);
 
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (files) {
-      Array.from(files).forEach((file) => {
-        onUpload({
-          name: file.name,
-          type: getFileType(file),
-          enabled: true,
-          status: 'processing',
-          size: file.size,
-        });
-      });
+      handleFileUpload(Array.from(files));
     }
   };
 
-  const handleYoutubeSubmit = () => {
+  const handleYoutubeSubmit = async () => {
+    if (!user) {
+      toast.error('Please sign in to add sources');
+      return;
+    }
+
     if (youtubeUrl) {
-      const videoId = youtubeUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/)?.[1];
-      onUpload({
-        name: `YouTube: ${videoId || youtubeUrl}`,
-        type: 'youtube',
-        enabled: true,
-        status: 'processing',
-      });
-      setYoutubeUrl('');
-      setDialogOpen(false);
+      setIsUploading(true);
+      try {
+        const videoId = youtubeUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&]+)/)?.[1];
+        const source = await createSource({
+          name: `YouTube: ${videoId || 'Video'}`,
+          type: 'youtube',
+          file_url: youtubeUrl,
+          metadata: { videoId },
+        });
+
+        if (source) {
+          onUpload({
+            name: source.name,
+            type: source.type,
+            enabled: source.enabled,
+            status: source.status,
+          });
+          toast.success('YouTube video added');
+        }
+        setYoutubeUrl('');
+        setDialogOpen(false);
+      } catch (error) {
+        console.error('YouTube add error:', error);
+        toast.error('Failed to add YouTube video');
+      }
+      setIsUploading(false);
     }
   };
 
-  const handleTextSubmit = () => {
+  const handleTextSubmit = async () => {
+    if (!user) {
+      toast.error('Please sign in to add sources');
+      return;
+    }
+
     if (textContent) {
-      onUpload({
-        name: textTitle || 'Pasted Text',
-        type: 'text',
-        enabled: true,
-        status: 'processing',
-        size: textContent.length,
-      });
-      setTextContent('');
-      setTextTitle('');
-      setDialogOpen(false);
+      setIsUploading(true);
+      try {
+        const source = await createSource({
+          name: textTitle || 'Pasted Text',
+          type: 'text',
+          size: textContent.length,
+          metadata: { content: textContent },
+        });
+
+        if (source) {
+          onUpload({
+            name: source.name,
+            type: source.type,
+            enabled: source.enabled,
+            status: source.status,
+            size: source.size,
+          });
+          toast.success('Text added');
+        }
+        setTextContent('');
+        setTextTitle('');
+        setDialogOpen(false);
+      } catch (error) {
+        console.error('Text add error:', error);
+        toast.error('Failed to add text');
+      }
+      setIsUploading(false);
     }
   };
 
@@ -108,9 +193,9 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
           isDragging
             ? 'border-primary bg-primary/10'
             : 'border-border bg-card/50 hover:border-primary/50 hover:bg-card'
-        }`}
-        whileHover={{ scale: 1.01 }}
-        whileTap={{ scale: 0.99 }}
+        } ${isUploading ? 'pointer-events-none opacity-60' : ''}`}
+        whileHover={!isUploading ? { scale: 1.01 } : undefined}
+        whileTap={!isUploading ? { scale: 0.99 } : undefined}
       >
         <input
           type="file"
@@ -118,9 +203,21 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
           accept=".pdf,.mp4,.mp3,.wav,.jpg,.jpeg,.png,.webp"
           onChange={handleFileSelect}
           className="absolute inset-0 cursor-pointer opacity-0"
+          disabled={isUploading}
         />
         <AnimatePresence mode="wait">
-          {isDragging ? (
+          {isUploading ? (
+            <motion.div
+              key="uploading"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              className="flex flex-col items-center"
+            >
+              <Loader2 className="mb-2 h-8 w-8 animate-spin text-primary" />
+              <p className="text-sm font-medium text-primary">Uploading...</p>
+            </motion.div>
+          ) : isDragging ? (
             <motion.div
               key="dragging"
               initial={{ opacity: 0, scale: 0.9 }}
@@ -151,7 +248,7 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
       <div className="grid grid-cols-2 gap-2">
         <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
           <DialogTrigger asChild>
-            <Button variant="outline" size="sm" className="justify-start gap-2 border-border bg-card/50 hover:bg-card">
+            <Button variant="outline" size="sm" className="justify-start gap-2 border-border bg-card/50 hover:bg-card" disabled={isUploading}>
               <Link className="h-4 w-4" />
               YouTube URL
             </Button>
@@ -178,7 +275,8 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
                   onChange={(e) => setYoutubeUrl(e.target.value)}
                   className="border-border bg-secondary"
                 />
-                <Button onClick={handleYoutubeSubmit} className="w-full">
+                <Button onClick={handleYoutubeSubmit} className="w-full" disabled={isUploading}>
+                  {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Add Video
                 </Button>
               </TabsContent>
@@ -196,7 +294,8 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
                   rows={6}
                   className="border-border bg-secondary"
                 />
-                <Button onClick={handleTextSubmit} className="w-full">
+                <Button onClick={handleTextSubmit} className="w-full" disabled={isUploading}>
+                  {isUploading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                   Add Text
                 </Button>
               </TabsContent>
@@ -209,6 +308,7 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
           size="sm"
           className="justify-start gap-2 border-border bg-card/50 hover:bg-card"
           onClick={() => setDialogOpen(true)}
+          disabled={isUploading}
         >
           <Type className="h-4 w-4" />
           Paste Text
