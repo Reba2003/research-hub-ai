@@ -12,6 +12,7 @@ interface ResearchStore {
   // Chat
   messages: ChatMessage[];
   addMessage: (message: ChatMessage) => void;
+  updateMessage: (id: string, updates: Partial<ChatMessage>) => void;
   clearMessages: () => void;
   isTyping: boolean;
   setIsTyping: (typing: boolean) => void;
@@ -48,6 +49,9 @@ export const useResearchStore = create<ResearchStore>((set) => ({
   // Chat
   messages: [],
   addMessage: (message) => set((state) => ({ messages: [...state.messages, message] })),
+  updateMessage: (id, updates) => set((state) => ({
+    messages: state.messages.map((m) => (m.id === id ? { ...m, ...updates } : m)),
+  })),
   clearMessages: () => set({ messages: [] }),
   isTyping: false,
   setIsTyping: (typing) => set({ isTyping: typing }),

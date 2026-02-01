@@ -2,30 +2,10 @@ import { supabase } from '@/integrations/supabase/client';
 import type { Json } from '@/integrations/supabase/types';
 import type { Source, ChatMessage, Summary, PodcastScript, QuizQuestion } from '@/types';
 
-// Trigger n8n webhook for various events
-export async function triggerN8nWebhook(payload: {
-  event_type: 'file_upload' | 'message' | 'output_request';
-  source_id?: string;
-  file_url?: string;
-  source_type?: string;
-  message_content?: string;
-  message_id?: string;
-  output_type?: 'summary' | 'podcast' | 'quiz';
-  output_id?: string;
-}) {
-  const { data, error } = await supabase.functions.invoke('n8n-webhook', {
-    body: payload,
-  });
+const SUPABASE_URL = import.meta.env.VITE_SUPABASE_URL;
 
-  if (error) {
-    console.error('n8n webhook error:', error);
-    throw error;
-  }
+// ============== Sources API ==============
 
-  return data;
-}
-
-// Sources API
 export async function createSource(source: {
   name: string;
   type: string;
@@ -56,17 +36,10 @@ export async function createSource(source: {
     throw error;
   }
 
-  // Trigger n8n for processing
-  try {
-    await triggerN8nWebhook({
-      event_type: 'file_upload',
-      source_id: data.id,
-      file_url: data.file_url || undefined,
-      source_type: data.type,
-    });
-  } catch (e) {
-    console.warn('n8n webhook failed (non-critical):', e);
-  }
+  // Trigger background processing
+  triggerSourceProcessing(data.id).catch(e => 
+    console.warn('Source processing trigger failed (non-critical):', e)
+  );
 
   return {
     id: data.id,
@@ -77,6 +50,19 @@ export async function createSource(source: {
     uploadedAt: new Date(data.created_at),
     size: data.size || undefined,
   };
+}
+
+export async function triggerSourceProcessing(sourceId: string) {
+  const { data, error } = await supabase.functions.invoke('process-source', {
+    body: { source_id: sourceId },
+  });
+
+  if (error) {
+    console.error('Process source error:', error);
+    throw error;
+  }
+
+  return data;
 }
 
 export async function fetchSources(): Promise<Source[]> {
@@ -125,7 +111,107 @@ export async function deleteSource(id: string) {
   }
 }
 
-// Messages API
+// ============== Chat API (Streaming) ==============
+
+export interface StreamChatOptions {
+  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  sourceIds?: string[];
+  onDelta: (deltaText: string) => void;
+  onDone: () => void;
+  onError: (error: Error) => void;
+}
+
+export async function streamChat({ messages, sourceIds, onDelta, onDone, onError }: StreamChatOptions) {
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
+    if (!session) {
+      throw new Error('Not authenticated');
+    }
+
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: `Bearer ${session.access_token}`,
+      },
+      body: JSON.stringify({ 
+        messages: messages.map(m => ({ role: m.role, content: m.content })),
+        source_ids: sourceIds,
+      }),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({ error: 'Request failed' }));
+      throw new Error(errorData.error || `Request failed with status ${response.status}`);
+    }
+
+    if (!response.body) {
+      throw new Error('No response body');
+    }
+
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let textBuffer = '';
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      
+      textBuffer += decoder.decode(value, { stream: true });
+
+      // Process line-by-line
+      let newlineIndex: number;
+      while ((newlineIndex = textBuffer.indexOf('\n')) !== -1) {
+        let line = textBuffer.slice(0, newlineIndex);
+        textBuffer = textBuffer.slice(newlineIndex + 1);
+
+        if (line.endsWith('\r')) line = line.slice(0, -1);
+        if (line.startsWith(':') || line.trim() === '') continue;
+        if (!line.startsWith('data: ')) continue;
+
+        const jsonStr = line.slice(6).trim();
+        if (jsonStr === '[DONE]') {
+          break;
+        }
+
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+          if (content) onDelta(content);
+        } catch {
+          // Incomplete JSON, put it back
+          textBuffer = line + '\n' + textBuffer;
+          break;
+        }
+      }
+    }
+
+    // Flush remaining buffer
+    if (textBuffer.trim()) {
+      for (let raw of textBuffer.split('\n')) {
+        if (!raw) continue;
+        if (raw.endsWith('\r')) raw = raw.slice(0, -1);
+        if (raw.startsWith(':') || raw.trim() === '') continue;
+        if (!raw.startsWith('data: ')) continue;
+        const jsonStr = raw.slice(6).trim();
+        if (jsonStr === '[DONE]') continue;
+        try {
+          const parsed = JSON.parse(jsonStr);
+          const content = parsed.choices?.[0]?.delta?.content as string | undefined;
+          if (content) onDelta(content);
+        } catch { /* ignore */ }
+      }
+    }
+
+    onDone();
+  } catch (error) {
+    console.error('Stream chat error:', error);
+    onError(error instanceof Error ? error : new Error('Unknown error'));
+  }
+}
+
+// ============== Messages API (Persistence) ==============
+
 export async function createMessage(message: {
   role: 'user' | 'assistant';
   content: string;
@@ -148,19 +234,6 @@ export async function createMessage(message: {
   if (error) {
     console.error('Create message error:', error);
     throw error;
-  }
-
-  // Trigger n8n for AI response (only for user messages)
-  if (message.role === 'user') {
-    try {
-      await triggerN8nWebhook({
-        event_type: 'message',
-        message_id: data.id,
-        message_content: data.content,
-      });
-    } catch (e) {
-      console.warn('n8n webhook failed (non-critical):', e);
-    }
   }
 
   return {
@@ -192,41 +265,24 @@ export async function fetchMessages(): Promise<ChatMessage[]> {
   }));
 }
 
-// Outputs API
-export async function requestOutput(type: 'summary' | 'podcast' | 'quiz') {
-  const { data: { user } } = await supabase.auth.getUser();
-  if (!user) throw new Error('Not authenticated');
+// ============== Outputs API ==============
 
-  const { data, error } = await supabase
-    .from('outputs')
-    .insert({
-      user_id: user.id,
-      type,
-      status: 'processing',
-    })
-    .select()
-    .single();
+export type OutputType = 'summary' | 'podcast' | 'quiz';
+
+export async function generateOutput(type: OutputType, sourceIds?: string[]) {
+  const { data, error } = await supabase.functions.invoke('generate-output', {
+    body: { output_type: type, source_ids: sourceIds },
+  });
 
   if (error) {
-    console.error('Create output error:', error);
+    console.error('Generate output error:', error);
     throw error;
-  }
-
-  // Trigger n8n for generation
-  try {
-    await triggerN8nWebhook({
-      event_type: 'output_request',
-      output_type: type,
-      output_id: data.id,
-    });
-  } catch (e) {
-    console.warn('n8n webhook failed (non-critical):', e);
   }
 
   return data;
 }
 
-export async function fetchOutput(type: 'summary' | 'podcast' | 'quiz') {
+export async function fetchOutput(type: OutputType) {
   const { data, error } = await supabase
     .from('outputs')
     .select('*')
@@ -241,4 +297,18 @@ export async function fetchOutput(type: 'summary' | 'podcast' | 'quiz') {
   }
 
   return data;
+}
+
+export async function fetchAllOutputs() {
+  const { data, error } = await supabase
+    .from('outputs')
+    .select('*')
+    .order('created_at', { ascending: false });
+
+  if (error) {
+    console.error('Fetch outputs error:', error);
+    throw error;
+  }
+
+  return data || [];
 }

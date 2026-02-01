@@ -1,1 +1,13 @@
 project_id = "dvsykrehgfiroolverhl"
+
+[functions.n8n-webhook]
+verify_jwt = false
+
+[functions.chat]
+verify_jwt = false
+
+[functions.process-source]
+verify_jwt = false
+
+[functions.generate-output]
+verify_jwt = false
