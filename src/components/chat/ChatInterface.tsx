@@ -6,37 +6,21 @@ import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ChatMessage } from './ChatMessage';
 import { useResearchStore } from '@/hooks/useResearchStore';
-import type { ChatMessage as ChatMessageType, Citation } from '@/types';
+import { streamChat, createMessage } from '@/lib/api';
+import { toast } from 'sonner';
+import type { ChatMessage as ChatMessageType } from '@/types';
 
 interface ChatInterfaceProps {
   className?: string;
 }
 
-// Mock responses with citations
-const mockResponses = [
-  {
-    content: "Based on your sources, I found several key insights about this topic. The main argument presented suggests a paradigm shift in the field, supported by empirical evidence from multiple studies.",
-    citations: [
-      { id: '1', sourceId: 's1', sourceName: 'Research Paper.pdf', sourceType: 'pdf' as const, location: 'PDF, p. 82', page: 82, text: 'Key finding' },
-      { id: '2', sourceId: 's2', sourceName: 'Lecture Video', sourceType: 'video' as const, location: 'Video, 12:45', timestamp: 765, text: 'Supporting evidence' },
-    ],
-  },
-  {
-    content: "The analysis reveals three distinct phases in the development process. Each phase builds upon the previous one, creating a cumulative effect that's well-documented across your uploaded materials.",
-    citations: [
-      { id: '3', sourceId: 's3', sourceName: 'YouTube Lecture', sourceType: 'youtube' as const, location: 'YT, 06:53', timestamp: 413, text: 'Phase breakdown' },
-      { id: '4', sourceId: 's1', sourceName: 'Research Paper.pdf', sourceType: 'pdf' as const, location: 'PDF, p. 156', page: 156, text: 'Statistical analysis' },
-    ],
-  },
-];
-
 export function ChatInterface({ className }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
-  const { messages, addMessage, isTyping, setIsTyping, sources } = useResearchStore();
+  const { messages, addMessage, updateMessage, isTyping, setIsTyping, sources } = useResearchStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const enabledSources = sources.filter((s) => s.enabled);
+  const enabledSources = sources.filter((s) => s.enabled && s.status === 'ready');
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -47,10 +31,11 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
   const handleSend = async () => {
     if (!input.trim() || isTyping) return;
 
+    const userContent = input.trim();
     const userMessage: ChatMessageType = {
       id: crypto.randomUUID(),
       role: 'user',
-      content: input.trim(),
+      content: userContent,
       timestamp: new Date(),
     };
 
@@ -58,19 +43,52 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
     setInput('');
     setIsTyping(true);
 
-    // Simulate AI response
-    setTimeout(() => {
-      const mockResponse = mockResponses[Math.floor(Math.random() * mockResponses.length)];
-      const assistantMessage: ChatMessageType = {
-        id: crypto.randomUUID(),
-        role: 'assistant',
-        content: mockResponse.content,
-        citations: mockResponse.citations,
-        timestamp: new Date(),
-      };
-      addMessage(assistantMessage);
-      setIsTyping(false);
-    }, 1500 + Math.random() * 1000);
+    // Create placeholder for assistant message
+    const assistantId = crypto.randomUUID();
+    const assistantMessage: ChatMessageType = {
+      id: assistantId,
+      role: 'assistant',
+      content: '',
+      timestamp: new Date(),
+    };
+    addMessage(assistantMessage);
+
+    // Save user message to database
+    createMessage({ role: 'user', content: userContent }).catch(console.error);
+
+    // Get enabled source IDs
+    const sourceIds = enabledSources.map(s => s.id);
+
+    // Build message history for context
+    const messageHistory = messages
+      .filter(m => m.content.trim())
+      .map(m => ({ role: m.role, content: m.content }));
+    messageHistory.push({ role: 'user', content: userContent });
+
+    let fullContent = '';
+
+    await streamChat({
+      messages: messageHistory,
+      sourceIds,
+      onDelta: (delta) => {
+        fullContent += delta;
+        updateMessage(assistantId, { content: fullContent });
+      },
+      onDone: () => {
+        setIsTyping(false);
+        // Save assistant message to database
+        if (fullContent) {
+          createMessage({ role: 'assistant', content: fullContent }).catch(console.error);
+        }
+      },
+      onError: (error) => {
+        setIsTyping(false);
+        updateMessage(assistantId, { 
+          content: 'Sorry, I encountered an error. Please try again.' 
+        });
+        toast.error(error.message || 'Failed to get response');
+      },
+    });
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -113,8 +131,8 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
               </div>
               <h3 className="mb-2 text-lg font-semibold text-foreground">Start Researching</h3>
               <p className="max-w-sm text-sm text-muted-foreground">
-                Ask questions about your uploaded sources. I'll provide answers with precise citations
-                you can click to jump to the source.
+                Ask questions about your uploaded sources. I'll provide answers with insights
+                from your study materials.
               </p>
             </motion.div>
           ) : (
@@ -127,7 +145,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
 
           {/* Typing indicator */}
           <AnimatePresence>
-            {isTyping && (
+            {isTyping && messages[messages.length - 1]?.content === '' && (
               <motion.div
                 initial={{ opacity: 0, y: 10 }}
                 animate={{ opacity: 1, y: 0 }}

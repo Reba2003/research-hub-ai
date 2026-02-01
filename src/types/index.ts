@@ -1,6 +1,6 @@
 export type SourceType = 'pdf' | 'video' | 'audio' | 'text' | 'youtube' | 'image';
 
-export type ProcessingStatus = 'idle' | 'processing' | 'completed' | 'error';
+export type ProcessingStatus = 'idle' | 'processing' | 'completed' | 'ready' | 'error';
 
 export interface Source {
   id: string;
