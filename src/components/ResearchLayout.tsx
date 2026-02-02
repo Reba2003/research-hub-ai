@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Menu, X, Sparkles } from 'lucide-react';
+import { Sparkles, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { SourceLibrary } from './source-library/SourceLibrary';
 import { ChatInterface } from './chat/ChatInterface';
@@ -8,11 +8,13 @@ import { OutputEngine } from './output/OutputEngine';
 import { MobileSourceSheet } from './MobileSourceSheet';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useResearchStore } from '@/hooks/useResearchStore';
+import { useAuth } from '@/hooks/useAuth';
 
 export function ResearchLayout() {
   const [showDesktopSources, setShowDesktopSources] = useState(true);
   const [showDesktopOutput, setShowDesktopOutput] = useState(true);
   const { activeOutputTab } = useResearchStore();
+  const { signOut } = useAuth();
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -44,6 +46,14 @@ export function ResearchLayout() {
             className="gap-2"
           >
             Output
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={signOut}
+            className="gap-2 text-muted-foreground hover:text-foreground"
+          >
+            <LogOut className="h-4 w-4" />
           </Button>
         </div>
       </header>
