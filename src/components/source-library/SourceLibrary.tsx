@@ -1,11 +1,13 @@
 import { motion, AnimatePresence } from 'framer-motion';
 import { Library, ChevronDown, ChevronUp } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { SourceItem } from './SourceItem';
 import { UploadZone } from './UploadZone';
 import { useResearchStore } from '@/hooks/useResearchStore';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { fetchSources, deleteSource as apiDeleteSource } from '@/lib/api';
+import { supabase } from '@/integrations/supabase/client';
 import type { Source } from '@/types';
 
 interface SourceLibraryProps {
@@ -13,24 +15,73 @@ interface SourceLibraryProps {
 }
 
 export function SourceLibrary({ className }: SourceLibraryProps) {
-  const { sources, addSource, removeSource, toggleSource, selectedCitation } = useResearchStore();
+  const { sources, addSource, removeSource, toggleSource, selectedCitation, updateSourceStatus } = useResearchStore();
   const [isCollapsed, setIsCollapsed] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
 
-  const handleUpload = (sourceData: Omit<Source, 'id' | 'uploadedAt'>) => {
-    const newSource: Source = {
-      ...sourceData,
-      id: crypto.randomUUID(),
-      uploadedAt: new Date(),
+  // Load sources from database on mount
+  useEffect(() => {
+    const loadSources = async () => {
+      try {
+        const dbSources = await fetchSources();
+        // Clear existing and add all from DB
+        const store = useResearchStore.getState();
+        // Only add sources that aren't already in the store
+        dbSources.forEach((source) => {
+          if (!store.sources.find((s) => s.id === source.id)) {
+            store.addSource(source);
+          }
+        });
+      } catch (error) {
+        console.error('Failed to load sources:', error);
+      } finally {
+        setIsLoading(false);
+      }
     };
-    addSource(newSource);
+    
+    loadSources();
+  }, []);
 
-    // Simulate processing completion
-    setTimeout(() => {
-      useResearchStore.getState().updateSourceStatus(newSource.id, 'completed');
-    }, 2000 + Math.random() * 2000);
+  // Subscribe to realtime source status updates
+  useEffect(() => {
+    const channel = supabase
+      .channel('sources-status')
+      .on(
+        'postgres_changes',
+        {
+          event: 'UPDATE',
+          schema: 'public',
+          table: 'sources',
+        },
+        (payload) => {
+          const updatedSource = payload.new as { id: string; status: string };
+          if (updatedSource.status) {
+            updateSourceStatus(updatedSource.id, updatedSource.status as Source['status']);
+          }
+        }
+      )
+      .subscribe();
+
+    return () => {
+      supabase.removeChannel(channel);
+    };
+  }, [updateSourceStatus]);
+
+  const handleUpload = (sourceData: Source) => {
+    // Source already has id and uploadedAt from API
+    addSource(sourceData);
   };
 
-  const enabledCount = sources.filter((s) => s.enabled).length;
+  const handleRemove = async (id: string) => {
+    try {
+      await apiDeleteSource(id);
+      removeSource(id);
+    } catch (error) {
+      console.error('Failed to delete source:', error);
+    }
+  };
+
+  const enabledCount = sources.filter((s) => s.enabled && s.status === 'ready').length;
 
   return (
     <div className={`flex h-full flex-col bg-sidebar ${className}`}>
@@ -88,7 +139,7 @@ export function SourceLibrary({ className }: SourceLibraryProps) {
                         key={source.id}
                         source={source}
                         onToggle={() => toggleSource(source.id)}
-                        onRemove={() => removeSource(source.id)}
+                        onRemove={() => handleRemove(source.id)}
                         isSelected={selectedCitation === source.id}
                       />
                     ))

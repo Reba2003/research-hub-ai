@@ -13,7 +13,7 @@ import { toast } from 'sonner';
 import type { Source, SourceType } from '@/types';
 
 interface UploadZoneProps {
-  onUpload: (source: Omit<Source, 'id' | 'uploadedAt'>) => void;
+  onUpload: (source: Source) => void;
 }
 
 export function UploadZone({ onUpload }: UploadZoneProps) {
@@ -77,13 +77,7 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
         });
 
         if (source) {
-          onUpload({
-            name: source.name,
-            type: source.type,
-            enabled: source.enabled,
-            status: source.status,
-            size: source.size,
-          });
+          onUpload(source);
           toast.success(`Uploaded: ${file.name}`);
         }
       } catch (error) {
@@ -127,12 +121,7 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
         });
 
         if (source) {
-          onUpload({
-            name: source.name,
-            type: source.type,
-            enabled: source.enabled,
-            status: source.status,
-          });
+          onUpload(source);
           toast.success('YouTube video added');
         }
         setYoutubeUrl('');
@@ -162,13 +151,7 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
         });
 
         if (source) {
-          onUpload({
-            name: source.name,
-            type: source.type,
-            enabled: source.enabled,
-            status: source.status,
-            size: source.size,
-          });
+          onUpload(source);
           toast.success('Text added');
         }
         setTextContent('');
