@@ -1,61 +1,98 @@
 import { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Brain, Check, X, RefreshCw, ArrowRight } from 'lucide-react';
+import { Brain, Check, X, RefreshCw, ArrowRight, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { generateOutput } from '@/lib/api';
+import { useResearchStore } from '@/hooks/useResearchStore';
+import { toast } from 'sonner';
 import type { QuizQuestion } from '@/types';
 
 interface QuizTabProps {
   questions: QuizQuestion[];
 }
 
-// Mock quiz data
-const mockQuestions: QuizQuestion[] = [
-  {
-    id: 'q1',
-    question: 'According to the research, what is the primary benefit of the mixed-methods approach?',
-    options: [
-      'It is faster to implement',
-      'It captures nuances that pure statistical analysis would miss',
-      'It requires fewer resources',
-      'It is easier to replicate',
-    ],
-    correctAnswer: 1,
-    explanation: 'The mixed-methods approach combines quantitative data with qualitative insights, allowing researchers to capture contextual nuances.',
-    sourceId: 's1',
-  },
-  {
-    id: 'q2',
-    question: 'What does the study suggest about collaborative frameworks?',
-    options: [
-      'They are too complex to implement',
-      'They lead to improved outcomes',
-      'They are outdated methodologies',
-      'They require extensive training',
-    ],
-    correctAnswer: 1,
-    explanation: 'The evidence strongly supports that collaborative frameworks lead to improved outcomes across various metrics.',
-    sourceId: 's2',
-  },
-  {
-    id: 'q3',
-    question: 'How many primary areas of focus emerge from the analyzed materials?',
-    options: ['Two', 'Three', 'Four', 'Five'],
-    correctAnswer: 1,
-    explanation: 'Three primary areas of focus emerged from the research, each representing a key advancement in the field.',
-    sourceId: 's1',
-  },
-];
-
 export function QuizTab({ questions }: QuizTabProps) {
-  const displayQuestions = questions.length > 0 ? questions : mockQuestions;
+  const [isGenerating, setIsGenerating] = useState(false);
+  const { sources, setQuizQuestions } = useResearchStore();
+  const enabledSources = sources.filter((s) => s.enabled && s.status === 'ready');
+
   const [currentIndex, setCurrentIndex] = useState(0);
   const [selectedAnswer, setSelectedAnswer] = useState<number | null>(null);
   const [showResult, setShowResult] = useState(false);
   const [score, setScore] = useState(0);
   const [isComplete, setIsComplete] = useState(false);
 
-  const currentQuestion = displayQuestions[currentIndex];
+  const handleGenerate = async () => {
+    if (enabledSources.length === 0) {
+      toast.error('No ready sources available. Upload and process sources first.');
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const sourceIds = enabledSources.map(s => s.id);
+      const result = await generateOutput('quiz', sourceIds);
+      
+      if (result?.content?.questions) {
+        const quizQuestions: QuizQuestion[] = result.content.questions.map(
+          (q: { question: string; options: string[]; correctIndex: number; explanation: string }, i: number) => ({
+            id: `q-${i}`,
+            question: q.question,
+            options: q.options,
+            correctAnswer: q.correctIndex,
+            explanation: q.explanation,
+            sourceId: '',
+          })
+        );
+        setQuizQuestions(quizQuestions);
+        // Reset quiz state
+        setCurrentIndex(0);
+        setSelectedAnswer(null);
+        setShowResult(false);
+        setScore(0);
+        setIsComplete(false);
+        toast.success('Quiz generated!');
+      }
+    } catch (error) {
+      console.error('Generate quiz error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate quiz');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  if (questions.length === 0) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+          <Brain className="h-8 w-8 text-primary" />
+        </div>
+        <h3 className="mb-2 text-lg font-semibold text-foreground">Generate Quiz</h3>
+        <p className="mb-6 max-w-sm text-sm text-muted-foreground">
+          Test your understanding with AI-generated quiz questions based on your sources.
+        </p>
+        <Button onClick={handleGenerate} disabled={isGenerating || enabledSources.length === 0} className="gap-2">
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <Brain className="h-4 w-4" />
+              Generate Quiz
+            </>
+          )}
+        </Button>
+        {enabledSources.length === 0 && (
+          <p className="mt-3 text-xs text-muted-foreground">Upload sources first</p>
+        )}
+      </div>
+    );
+  }
+
+  const currentQuestion = questions[currentIndex];
   const isCorrect = selectedAnswer === currentQuestion?.correctAnswer;
 
   const handleSelect = (index: number) => {
@@ -68,7 +105,7 @@ export function QuizTab({ questions }: QuizTabProps) {
   };
 
   const handleNext = () => {
-    if (currentIndex < displayQuestions.length - 1) {
+    if (currentIndex < questions.length - 1) {
       setCurrentIndex((i) => i + 1);
       setSelectedAnswer(null);
       setShowResult(false);
@@ -87,7 +124,7 @@ export function QuizTab({ questions }: QuizTabProps) {
 
   if (isComplete) {
     return (
-      <div className="flex h-full items-center justify-center p-6">
+      <div className="flex h-full flex-col items-center justify-center p-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
@@ -98,10 +135,10 @@ export function QuizTab({ questions }: QuizTabProps) {
           </div>
           <h3 className="mb-2 text-2xl font-bold text-foreground">Quiz Complete!</h3>
           <p className="mb-6 text-muted-foreground">
-            You scored {score} out of {displayQuestions.length}
+            You scored {score} out of {questions.length}
           </p>
           <div className="mb-6 flex justify-center gap-1">
-            {displayQuestions.map((_, i) => (
+            {questions.map((_, i) => (
               <div
                 key={i}
                 className={`h-2 w-8 rounded-full ${
@@ -110,10 +147,16 @@ export function QuizTab({ questions }: QuizTabProps) {
               />
             ))}
           </div>
-          <Button onClick={handleRestart} className="gap-2">
-            <RefreshCw className="h-4 w-4" />
-            Retake Quiz
-          </Button>
+          <div className="flex gap-3 justify-center">
+            <Button onClick={handleRestart} variant="outline" className="gap-2">
+              <RefreshCw className="h-4 w-4" />
+              Retake Quiz
+            </Button>
+            <Button onClick={handleGenerate} disabled={isGenerating} className="gap-2">
+              {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <Brain className="h-4 w-4" />}
+              New Quiz
+            </Button>
+          </div>
         </motion.div>
       </div>
     );
@@ -123,26 +166,29 @@ export function QuizTab({ questions }: QuizTabProps) {
     <div className="flex h-full flex-col">
       <ScrollArea className="flex-1">
         <div className="p-6">
-          {/* Header */}
           <motion.div
             initial={{ opacity: 0, y: 20 }}
             animate={{ opacity: 1, y: 0 }}
-            className="mb-6 flex items-center gap-3"
+            className="mb-6 flex items-center justify-between"
           >
-            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-              <Brain className="h-5 w-5 text-primary" />
+            <div className="flex items-center gap-3">
+              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+                <Brain className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h3 className="font-semibold text-foreground">Knowledge Check</h3>
+                <p className="text-xs text-muted-foreground">
+                  Question {currentIndex + 1} of {questions.length}
+                </p>
+              </div>
             </div>
-            <div>
-              <h3 className="font-semibold text-foreground">Knowledge Check</h3>
-              <p className="text-xs text-muted-foreground">
-                Question {currentIndex + 1} of {displayQuestions.length}
-              </p>
-            </div>
+            <Button variant="ghost" size="sm" onClick={handleGenerate} disabled={isGenerating} className="gap-1">
+              {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            </Button>
           </motion.div>
 
-          {/* Progress */}
           <div className="mb-6 flex gap-1">
-            {displayQuestions.map((_, i) => (
+            {questions.map((_, i) => (
               <div
                 key={i}
                 className={`h-1 flex-1 rounded-full transition-colors ${
@@ -156,7 +202,6 @@ export function QuizTab({ questions }: QuizTabProps) {
             ))}
           </div>
 
-          {/* Question */}
           <AnimatePresence mode="wait">
             <motion.div
               key={currentQuestion.id}
@@ -218,7 +263,6 @@ export function QuizTab({ questions }: QuizTabProps) {
                 })}
               </div>
 
-              {/* Explanation */}
               <AnimatePresence>
                 {showResult && (
                   <motion.div
@@ -241,14 +285,13 @@ export function QuizTab({ questions }: QuizTabProps) {
         </div>
       </ScrollArea>
 
-      {/* Footer */}
       <div className="border-t border-border p-4">
         <Button
           onClick={handleNext}
           disabled={!showResult}
           className="w-full gap-2"
         >
-          {currentIndex < displayQuestions.length - 1 ? (
+          {currentIndex < questions.length - 1 ? (
             <>
               Next Question
               <ArrowRight className="h-4 w-4" />

@@ -46,21 +46,21 @@ Deno.serve(async (req) => {
 
     const { messages, source_ids } = await req.json();
 
-    // Fetch enabled sources for context
+    // Fetch ALL documents for enabled sources (raw content + summaries)
     let sourceContext = '';
     if (source_ids && source_ids.length > 0) {
-      // Fetch documents (processed source chunks) for RAG
       const { data: documents } = await supabase
         .from('documents')
         .select('content, metadata, source_id')
         .eq('user_id', user.id)
         .in('source_id', source_ids)
-        .limit(20);
+        .order('source_id');
 
       if (documents && documents.length > 0) {
-        sourceContext = '\n\nRelevant source content:\n' + documents.map((doc, i) => {
+        sourceContext = '\n\nSource materials:\n' + documents.map((doc, i) => {
           const meta = doc.metadata as Record<string, unknown> || {};
-          return `[Source ${i + 1}]: ${doc.content}\n(From: ${meta.source_name || 'Unknown'}, ${meta.location || ''})`;
+          const chunkType = meta.chunk_type === 'summary' ? ' (Summary)' : '';
+          return `[Source ${i + 1} - ${meta.source_name || 'Unknown'}${chunkType}]: ${doc.content}`;
         }).join('\n\n');
       }
     }
@@ -70,14 +70,14 @@ Deno.serve(async (req) => {
 
 When answering questions:
 1. Reference specific parts of the sources when possible
-2. Provide clear, well-structured answers
+2. Provide clear, well-structured answers using the FULL content available
 3. Use citations in the format [Source N] when referencing material
-4. Be concise but thorough
+4. Be thorough and detailed - use all the information from the sources
 5. If you cannot find relevant information in the sources, say so honestly
 
 ${sourceContext}`;
 
-    console.log('Calling Lovable AI with', messages.length, 'messages');
+    console.log('Calling Lovable AI with', messages.length, 'messages,', sourceContext.length, 'chars of context');
 
     // Call Lovable AI Gateway with streaming
     const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
