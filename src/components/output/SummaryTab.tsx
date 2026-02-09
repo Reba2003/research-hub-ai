@@ -1,49 +1,85 @@
+import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { FileText, ChevronRight } from 'lucide-react';
-import { CitationChip } from '@/components/chat/CitationChip';
+import { FileText, ChevronRight, Loader2, RefreshCw } from 'lucide-react';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Button } from '@/components/ui/button';
+import { generateOutput } from '@/lib/api';
+import { useResearchStore } from '@/hooks/useResearchStore';
+import { toast } from 'sonner';
 import type { Summary } from '@/types';
 
 interface SummaryTabProps {
   summary: Summary | null;
 }
 
-// Mock summary data
-const mockSummary: Summary = {
-  id: '1',
-  title: 'Research Summary',
-  generatedAt: new Date(),
-  sections: [
-    {
-      id: 's1',
-      heading: 'Key Findings',
-      content: 'The research reveals significant advancements in the field, with three primary areas of focus emerging from the analyzed materials. First, there is a clear trend toward integrated approaches that combine theoretical frameworks with practical applications.',
-      citations: [
-        { id: 'c1', sourceId: 's1', sourceName: 'Research.pdf', sourceType: 'pdf', location: 'PDF, p. 12', page: 12, text: '' },
-      ],
-    },
-    {
-      id: 's2',
-      heading: 'Methodology Overview',
-      content: 'The studies employ a mixed-methods approach, combining quantitative analysis with qualitative insights. This methodology ensures robust findings that are both statistically significant and contextually meaningful.',
-      citations: [
-        { id: 'c2', sourceId: 's2', sourceName: 'Lecture', sourceType: 'video', location: 'Video, 08:32', timestamp: 512, text: '' },
-        { id: 'c3', sourceId: 's1', sourceName: 'Research.pdf', sourceType: 'pdf', location: 'PDF, p. 45', page: 45, text: '' },
-      ],
-    },
-    {
-      id: 's3',
-      heading: 'Conclusions',
-      content: 'The evidence strongly supports the hypothesis that collaborative frameworks lead to improved outcomes. Future research should focus on longitudinal studies to validate these preliminary findings.',
-      citations: [
-        { id: 'c4', sourceId: 's3', sourceName: 'YouTube Analysis', sourceType: 'youtube', location: 'YT, 15:20', timestamp: 920, text: '' },
-      ],
-    },
-  ],
-};
-
 export function SummaryTab({ summary }: SummaryTabProps) {
-  const displaySummary = summary || mockSummary;
+  const [isGenerating, setIsGenerating] = useState(false);
+  const { sources, setSummary } = useResearchStore();
+  const enabledSources = sources.filter((s) => s.enabled && s.status === 'ready');
+
+  const handleGenerate = async () => {
+    if (enabledSources.length === 0) {
+      toast.error('No ready sources available. Upload and process sources first.');
+      return;
+    }
+
+    setIsGenerating(true);
+    try {
+      const sourceIds = enabledSources.map(s => s.id);
+      const result = await generateOutput('summary', sourceIds);
+      
+      if (result?.content) {
+        const content = result.content;
+        setSummary({
+          id: result.output_id || crypto.randomUUID(),
+          title: content.title || 'Study Summary',
+          generatedAt: new Date(),
+          sections: (content.sections || []).map((s: { heading: string; content: string }, i: number) => ({
+            id: `s-${i}`,
+            heading: s.heading,
+            content: s.content,
+            citations: [],
+          })),
+        });
+        toast.success('Summary generated!');
+      }
+    } catch (error) {
+      console.error('Generate summary error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate summary');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  if (!summary) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+          <FileText className="h-8 w-8 text-primary" />
+        </div>
+        <h3 className="mb-2 text-lg font-semibold text-foreground">Generate Summary</h3>
+        <p className="mb-6 max-w-sm text-sm text-muted-foreground">
+          Create a comprehensive summary from your uploaded sources.
+        </p>
+        <Button onClick={handleGenerate} disabled={isGenerating || enabledSources.length === 0} className="gap-2">
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <FileText className="h-4 w-4" />
+              Generate Summary
+            </>
+          )}
+        </Button>
+        {enabledSources.length === 0 && (
+          <p className="mt-3 text-xs text-muted-foreground">Upload sources first</p>
+        )}
+      </div>
+    );
+  }
 
   return (
     <ScrollArea className="h-full">
@@ -51,21 +87,27 @@ export function SummaryTab({ summary }: SummaryTabProps) {
         <motion.div
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-3"
+          className="flex items-center justify-between"
         >
-          <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
-            <FileText className="h-5 w-5 text-primary" />
+          <div className="flex items-center gap-3">
+            <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-primary/10">
+              <FileText className="h-5 w-5 text-primary" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-foreground">{summary.title}</h3>
+              <p className="text-xs text-muted-foreground">
+                Generated {summary.generatedAt.toLocaleDateString()}
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold text-foreground">{displaySummary.title}</h3>
-            <p className="text-xs text-muted-foreground">
-              Generated {displaySummary.generatedAt.toLocaleDateString()}
-            </p>
-          </div>
+          <Button variant="ghost" size="sm" onClick={handleGenerate} disabled={isGenerating} className="gap-1">
+            {isGenerating ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+            Regenerate
+          </Button>
         </motion.div>
 
         <div className="space-y-4">
-          {displaySummary.sections.map((section, index) => (
+          {summary.sections.map((section, index) => (
             <motion.div
               key={section.id}
               initial={{ opacity: 0, y: 20 }}
@@ -77,16 +119,9 @@ export function SummaryTab({ summary }: SummaryTabProps) {
                 <ChevronRight className="h-4 w-4 text-primary" />
                 <h4 className="font-medium text-foreground">{section.heading}</h4>
               </div>
-              <p className="mb-3 text-sm leading-relaxed text-muted-foreground">
+              <p className="text-sm leading-relaxed text-muted-foreground whitespace-pre-wrap">
                 {section.content}
               </p>
-              {section.citations.length > 0 && (
-                <div className="flex flex-wrap gap-2">
-                  {section.citations.map((citation) => (
-                    <CitationChip key={citation.id} citation={citation} />
-                  ))}
-                </div>
-              )}
             </motion.div>
           ))}
         </div>

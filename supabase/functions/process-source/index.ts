@@ -10,8 +10,38 @@ interface SourceData {
   name: string;
   type: string;
   file_url?: string;
+  file_path?: string;
   metadata?: Record<string, unknown>;
   user_id: string;
+}
+
+// Split text into chunks of roughly maxChars, breaking at sentence boundaries
+function chunkText(text: string, maxChars = 4000): string[] {
+  if (text.length <= maxChars) return [text];
+  
+  const chunks: string[] = [];
+  let remaining = text;
+  
+  while (remaining.length > 0) {
+    if (remaining.length <= maxChars) {
+      chunks.push(remaining);
+      break;
+    }
+    
+    // Try to break at a sentence boundary
+    let breakPoint = remaining.lastIndexOf('. ', maxChars);
+    if (breakPoint < maxChars * 0.5) {
+      breakPoint = remaining.lastIndexOf('\n', maxChars);
+    }
+    if (breakPoint < maxChars * 0.3) {
+      breakPoint = maxChars;
+    }
+    
+    chunks.push(remaining.slice(0, breakPoint + 1).trim());
+    remaining = remaining.slice(breakPoint + 1).trim();
+  }
+  
+  return chunks;
 }
 
 Deno.serve(async (req) => {
@@ -80,80 +110,129 @@ Deno.serve(async (req) => {
       .eq('id', source_id);
 
     // Extract content based on source type
-    let content = '';
+    let rawContent = '';
     const sourceData = source as SourceData;
 
     if (sourceData.type === 'text') {
-      // Text was pasted directly
-      content = (sourceData.metadata?.content as string) || '';
+      rawContent = (sourceData.metadata?.content as string) || '';
     } else if (sourceData.type === 'youtube') {
-      // For YouTube, we'll use AI to process the URL
-      content = `YouTube video: ${sourceData.file_url}. This video needs to be analyzed.`;
-    } else if (sourceData.file_url) {
-      // For uploaded files, use the URL
-      // In production, you would fetch and parse the file content
-      content = `Uploaded file: ${sourceData.name}. File URL: ${sourceData.file_url}`;
+      rawContent = `YouTube video: ${sourceData.file_url}. This video needs to be analyzed.`;
+    } else if (sourceData.file_url || sourceData.file_path) {
+      // Try to download and read the file content
+      let fileContent = '';
+      
+      if (sourceData.file_path) {
+        try {
+          const { data: fileData, error: downloadError } = await supabase.storage
+            .from('sources')
+            .download(sourceData.file_path);
+          
+          if (!downloadError && fileData) {
+            fileContent = await fileData.text();
+            console.log(`Downloaded file content: ${fileContent.length} chars`);
+          } else {
+            console.error('File download error:', downloadError);
+          }
+        } catch (e) {
+          console.error('Error downloading file:', e);
+        }
+      }
+      
+      rawContent = fileContent || `Uploaded file: ${sourceData.name}. File URL: ${sourceData.file_url || sourceData.file_path}`;
     }
 
-    // If we have content, use AI to create a structured summary for RAG
-    if (content) {
-      try {
-        const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-          method: 'POST',
-          headers: {
-            Authorization: `Bearer ${LOVABLE_API_KEY}`,
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            model: 'google/gemini-2.5-flash',
-            messages: [
-              {
-                role: 'system',
-                content: `You are a document processor. Extract and summarize the key information from the provided content. 
-Create a structured summary that captures:
-1. Main topics and themes
-2. Key facts and data points
-3. Important quotes or statements
-4. Conclusions or takeaways
+    if (!rawContent.trim()) {
+      await supabase
+        .from('sources')
+        .update({ status: 'error' })
+        .eq('id', source_id);
 
-Format your response as clear, searchable paragraphs that can be used for retrieval-augmented generation.`
-              },
-              {
-                role: 'user',
-                content: `Process this content from "${sourceData.name}":\n\n${content.substring(0, 10000)}`
-              }
-            ],
-          }),
+      return new Response(
+        JSON.stringify({ error: 'No content could be extracted from source' }),
+        { status: 400, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+      );
+    }
+
+    // Delete any existing documents for this source (re-processing)
+    await supabase
+      .from('documents')
+      .delete()
+      .eq('source_id', source_id)
+      .eq('user_id', user.id);
+
+    // Store the FULL raw content as chunked documents for RAG
+    const chunks = chunkText(rawContent, 4000);
+    console.log(`Storing ${chunks.length} raw content chunks for source: ${sourceData.name}`);
+
+    for (let i = 0; i < chunks.length; i++) {
+      const { error: docError } = await supabase
+        .from('documents')
+        .insert({
+          source_id: source_id,
+          user_id: user.id,
+          content: chunks[i],
+          metadata: {
+            source_name: sourceData.name,
+            source_type: sourceData.type,
+            chunk_index: i,
+            total_chunks: chunks.length,
+            chunk_type: 'raw',
+            processed_at: new Date().toISOString(),
+            location: `Part ${i + 1} of ${chunks.length}`,
+          }
         });
 
-        if (response.ok) {
-          const result = await response.json();
-          const processedContent = result.choices?.[0]?.message?.content || content;
+      if (docError) {
+        console.error(`Error storing chunk ${i}:`, docError);
+      }
+    }
 
-          // Store as document for RAG
-          const { error: docError } = await supabase
+    // Also create an AI-generated summary chunk for quick retrieval
+    try {
+      const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${LOVABLE_API_KEY}`,
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          model: 'google/gemini-2.5-flash',
+          messages: [
+            {
+              role: 'system',
+              content: `You are a document processor. Create a comprehensive summary that captures ALL key information, facts, data points, arguments, and conclusions from the provided content. Be thorough - do not omit any important details.`
+            },
+            {
+              role: 'user',
+              content: `Thoroughly summarize this content from "${sourceData.name}":\n\n${rawContent.substring(0, 30000)}`
+            }
+          ],
+        }),
+      });
+
+      if (response.ok) {
+        const result = await response.json();
+        const summaryContent = result.choices?.[0]?.message?.content || '';
+
+        if (summaryContent) {
+          await supabase
             .from('documents')
             .insert({
               source_id: source_id,
               user_id: user.id,
-              content: processedContent,
+              content: summaryContent,
               metadata: {
                 source_name: sourceData.name,
                 source_type: sourceData.type,
+                chunk_type: 'summary',
                 processed_at: new Date().toISOString(),
-                location: sourceData.type === 'pdf' ? 'Full document' : 
-                         sourceData.type === 'youtube' ? 'Video transcript' : 'Text content'
+                location: 'AI Summary',
               }
             });
-
-          if (docError) {
-            console.error('Error storing document:', docError);
-          }
         }
-      } catch (aiError) {
-        console.error('AI processing error:', aiError);
-        // Still mark as ready even if AI fails - content is stored
       }
+    } catch (aiError) {
+      console.error('AI summary error (non-critical):', aiError);
     }
 
     // Update status to ready
@@ -165,7 +244,7 @@ Format your response as clear, searchable paragraphs that can be used for retrie
     console.log('Source processed successfully:', source_id);
 
     return new Response(
-      JSON.stringify({ success: true, source_id }),
+      JSON.stringify({ success: true, source_id, chunks: chunks.length }),
       { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
     );
 

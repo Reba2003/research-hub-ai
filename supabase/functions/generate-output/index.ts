@@ -7,41 +7,19 @@ const corsHeaders = {
 
 type OutputType = 'summary' | 'podcast' | 'quiz';
 
-interface OutputContent {
-  summary?: {
-    title: string;
-    sections: Array<{ heading: string; content: string }>;
-    keyTakeaways: string[];
-  };
-  podcast?: {
-    title: string;
-    segments: Array<{ speaker: string; text: string; timestamp?: string }>;
-    duration?: string;
-  };
-  quiz?: {
-    title: string;
-    questions: Array<{
-      question: string;
-      options: string[];
-      correctIndex: number;
-      explanation: string;
-    }>;
-  };
-}
-
 const outputPrompts: Record<OutputType, string> = {
-  summary: `Create a comprehensive study summary based on the provided source content.
+  summary: `Create a comprehensive study summary based on the provided source content. Use ALL the detail available - do not summarize briefly, be thorough.
 
 Return a JSON object with this exact structure:
 {
   "title": "Summary title",
   "sections": [
-    { "heading": "Section heading", "content": "Detailed section content" }
+    { "heading": "Section heading", "content": "Detailed section content with specific facts, data, and explanations from the source" }
   ],
   "keyTakeaways": ["Takeaway 1", "Takeaway 2", "Takeaway 3"]
 }
 
-Make the summary educational, well-organized, and suitable for studying.`,
+Create as many sections as needed to cover ALL the material thoroughly. Each section should contain substantial detail from the sources.`,
 
   podcast: `Create a podcast script based on the provided source content. Format it as a conversation between two hosts: "Alex" (the explainer) and "Jordan" (asks clarifying questions).
 
@@ -55,9 +33,9 @@ Return a JSON object with this exact structure:
   "duration": "Estimated duration like '15 minutes'"
 }
 
-Make it engaging, educational, and conversational.`,
+Make it engaging, educational, and conversational. Cover the source material in depth.`,
 
-  quiz: `Create an interactive quiz based on the provided source content.
+  quiz: `Create an interactive quiz based on the provided source content. Questions should test deep understanding, not just surface-level recall.
 
 Return a JSON object with this exact structure:
 {
@@ -67,12 +45,12 @@ Return a JSON object with this exact structure:
       "question": "The question text?",
       "options": ["Option A", "Option B", "Option C", "Option D"],
       "correctIndex": 0,
-      "explanation": "Why this answer is correct"
+      "explanation": "Why this answer is correct, referencing specific source content"
     }
   ]
 }
 
-Create 5-10 questions that test understanding of the key concepts.`
+Create 8-12 questions that test understanding of the key concepts, facts, and arguments from the sources.`
 };
 
 Deno.serve(async (req) => {
@@ -145,10 +123,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Fetch source content for generation
+    // Fetch source content for generation - get ALL documents (raw + summary)
     let sourceContent = '';
     
-    // Get enabled sources or specified sources
     const sourceQuery = supabase
       .from('sources')
       .select('id, name, type')
@@ -164,23 +141,23 @@ Deno.serve(async (req) => {
     const sourceIdList = sources?.map(s => s.id) || [];
 
     if (sourceIdList.length > 0) {
-      // Fetch processed documents
+      // Fetch ALL documents - raw chunks and summaries
       const { data: documents } = await supabase
         .from('documents')
         .select('content, metadata')
         .eq('user_id', user.id)
-        .in('source_id', sourceIdList);
+        .in('source_id', sourceIdList)
+        .order('source_id');
 
       if (documents && documents.length > 0) {
         sourceContent = documents.map((doc, i) => {
           const meta = doc.metadata as Record<string, unknown> || {};
-          return `--- Source ${i + 1}: ${meta.source_name || 'Unknown'} ---\n${doc.content}`;
+          return `--- Source: ${meta.source_name || 'Unknown'} (${meta.location || `Part ${i + 1}`}) ---\n${doc.content}`;
         }).join('\n\n');
       }
     }
 
     if (!sourceContent) {
-      // Update to error status
       await supabase
         .from('outputs')
         .update({ status: 'error', content: { error: 'No sources available' } })
@@ -192,7 +169,9 @@ Deno.serve(async (req) => {
       );
     }
 
-    // Generate output using AI
+    console.log(`Source content for ${output_type}: ${sourceContent.length} chars from ${sourceIdList.length} sources`);
+
+    // Generate output using AI - use larger context window
     try {
       const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
         method: 'POST',
@@ -209,7 +188,7 @@ Deno.serve(async (req) => {
             },
             {
               role: 'user',
-              content: `Based on these study materials, generate the ${output_type}:\n\n${sourceContent.substring(0, 15000)}`
+              content: `Based on these study materials, generate the ${output_type}. Use ALL the content provided - be thorough and detailed:\n\n${sourceContent.substring(0, 100000)}`
             }
           ],
           response_format: { type: 'json_object' },
@@ -231,6 +210,17 @@ Deno.serve(async (req) => {
             { status: 429, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
           );
         }
+        if (response.status === 402) {
+          await supabase
+            .from('outputs')
+            .update({ status: 'error', content: { error: 'Credits exhausted' } })
+            .eq('id', output.id);
+
+          return new Response(
+            JSON.stringify({ error: 'AI credits exhausted. Please add credits to continue.' }),
+            { status: 402, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
+          );
+        }
 
         throw new Error('AI service error');
       }
@@ -238,13 +228,12 @@ Deno.serve(async (req) => {
       const result = await response.json();
       const generatedContent = result.choices?.[0]?.message?.content;
 
-      // Parse the JSON response
-      let parsedContent: OutputContent;
+      let parsedContent: Record<string, unknown>;
       try {
         parsedContent = JSON.parse(generatedContent);
       } catch {
-        console.error('Failed to parse AI response:', generatedContent);
-        parsedContent = { [output_type]: { error: 'Failed to parse response', raw: generatedContent } } as unknown as OutputContent;
+        console.error('Failed to parse AI response:', generatedContent?.substring(0, 500));
+        parsedContent = { error: 'Failed to parse response', raw: generatedContent };
       }
 
       // Update output with generated content
