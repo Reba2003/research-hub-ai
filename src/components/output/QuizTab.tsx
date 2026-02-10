@@ -34,25 +34,40 @@ export function QuizTab({ questions }: QuizTabProps) {
       const sourceIds = enabledSources.map(s => s.id);
       const result = await generateOutput('quiz', sourceIds);
       
-      if (result?.content?.questions) {
-        const quizQuestions: QuizQuestion[] = result.content.questions.map(
-          (q: { question: string; options: string[]; correctIndex: number; explanation: string }, i: number) => ({
-            id: `q-${i}`,
-            question: q.question,
-            options: q.options,
-            correctAnswer: q.correctIndex,
-            explanation: q.explanation,
-            sourceId: '',
-          })
-        );
-        setQuizQuestions(quizQuestions);
-        // Reset quiz state
+      // generate-notebook-details returns { content: string } for quiz type
+      const content = typeof result?.content === 'string' ? result.content : '';
+      
+      // Try to parse JSON quiz from the content
+      let parsedQuestions: QuizQuestion[] = [];
+      try {
+        const jsonMatch = content.match(/\[[\s\S]*\]/);
+        if (jsonMatch) {
+          const parsed = JSON.parse(jsonMatch[0]);
+          parsedQuestions = parsed.map(
+            (q: { question: string; options: string[]; correctIndex?: number; correct_answer?: number; explanation: string }, i: number) => ({
+              id: `q-${i}`,
+              question: q.question,
+              options: q.options,
+              correctAnswer: q.correctIndex ?? q.correct_answer ?? 0,
+              explanation: q.explanation || '',
+              sourceId: '',
+            })
+          );
+        }
+      } catch (e) {
+        console.warn('Failed to parse quiz JSON:', e);
+      }
+      
+      if (parsedQuestions.length > 0) {
+        setQuizQuestions(parsedQuestions);
         setCurrentIndex(0);
         setSelectedAnswer(null);
         setShowResult(false);
         setScore(0);
         setIsComplete(false);
         toast.success('Quiz generated!');
+      } else {
+        toast.error('Could not parse quiz questions from AI response');
       }
     } catch (error) {
       console.error('Generate quiz error:', error);

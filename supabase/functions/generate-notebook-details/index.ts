@@ -51,11 +51,12 @@ Deno.serve(async (req) => {
     }
 
     const typePrompts: Record<string, string> = {
-      summary: 'Create a comprehensive, well-structured summary with clear headings and key takeaways.',
+      summary: 'Create a comprehensive, well-structured summary with clear ## headings and key takeaways.',
       study_guide: 'Create a detailed study guide with key concepts, definitions, and review questions.',
       faq: 'Generate a comprehensive FAQ with 10-15 questions and detailed answers.',
       timeline: 'Create a chronological timeline of key events and developments.',
       briefing: 'Create an executive briefing document with key findings, implications, and recommendations.',
+      quiz: 'Generate a quiz as a JSON array of 8-10 objects with this exact format: [{"question": "...", "options": ["A", "B", "C", "D"], "correctIndex": 0, "explanation": "..."}]. Return ONLY the JSON array, no other text.',
     };
 
     const prompt = typePrompts[notebook_type || 'summary'] || typePrompts.summary;
