@@ -29,17 +29,20 @@ export function SummaryTab({ summary }: SummaryTabProps) {
       const result = await generateOutput('summary', sourceIds);
       
       if (result?.content) {
-        const content = result.content;
+        const content = typeof result.content === 'string' ? result.content : '';
+        // Parse markdown content into sections by headings
+        const sections = content.split(/^##\s+/m).filter(Boolean).map((section: string, i: number) => {
+          const lines = section.split('\n');
+          const heading = lines[0]?.trim() || `Section ${i + 1}`;
+          const body = lines.slice(1).join('\n').trim();
+          return { id: `s-${i}`, heading, content: body, citations: [] };
+        });
+        
         setSummary({
-          id: result.output_id || crypto.randomUUID(),
-          title: content.title || 'Study Summary',
+          id: crypto.randomUUID(),
+          title: 'Study Summary',
           generatedAt: new Date(),
-          sections: (content.sections || []).map((s: { heading: string; content: string }, i: number) => ({
-            id: `s-${i}`,
-            heading: s.heading,
-            content: s.content,
-            citations: [],
-          })),
+          sections: sections.length > 0 ? sections : [{ id: 's-0', heading: 'Summary', content, citations: [] }],
         });
         toast.success('Summary generated!');
       }

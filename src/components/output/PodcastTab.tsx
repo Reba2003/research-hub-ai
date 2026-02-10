@@ -1,65 +1,90 @@
 import { useState } from 'react';
 import { motion } from 'framer-motion';
-import { Mic, Play, Pause, SkipBack, SkipForward, Volume2 } from 'lucide-react';
+import { Mic, Play, Pause, SkipBack, SkipForward, Volume2, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Slider } from '@/components/ui/slider';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { generateOutput } from '@/lib/api';
+import { useResearchStore } from '@/hooks/useResearchStore';
+import { toast } from 'sonner';
 import type { PodcastScript } from '@/types';
 
 interface PodcastTabProps {
   podcast: PodcastScript | null;
 }
 
-// Mock podcast data
-const mockPodcast: PodcastScript = {
-  id: '1',
-  title: 'Research Deep Dive',
-  duration: 480,
-  segments: [
-    {
-      id: 'seg1',
-      speaker: 'host',
-      content: "Welcome to today's research breakdown. We're diving deep into the fascinating findings from your uploaded sources.",
-      timestamp: 0,
-    },
-    {
-      id: 'seg2',
-      speaker: 'expert',
-      content: "Thanks for having me. The research presents a compelling argument for rethinking traditional approaches. Let me highlight the key discoveries.",
-      timestamp: 30,
-    },
-    {
-      id: 'seg3',
-      speaker: 'host',
-      content: "What stands out most from the methodology used in these studies?",
-      timestamp: 75,
-    },
-    {
-      id: 'seg4',
-      speaker: 'expert',
-      content: "The mixed-methods approach is particularly innovative. By combining quantitative data with qualitative insights, the researchers were able to capture nuances that pure statistical analysis would miss.",
-      timestamp: 90,
-    },
-    {
-      id: 'seg5',
-      speaker: 'host',
-      content: "And what about the practical implications of these findings?",
-      timestamp: 150,
-    },
-    {
-      id: 'seg6',
-      speaker: 'expert',
-      content: "That's where it gets exciting. The research suggests actionable steps that practitioners can implement immediately. This bridges the gap between theory and practice beautifully.",
-      timestamp: 165,
-    },
-  ],
-};
-
 export function PodcastTab({ podcast }: PodcastTabProps) {
-  const displayPodcast = podcast || mockPodcast;
+  const [isGenerating, setIsGenerating] = useState(false);
+  const { sources, setPodcast } = useResearchStore();
+  const enabledSources = sources.filter((s) => s.enabled && s.status === 'ready');
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [volume, setVolume] = useState([75]);
+
+  const handleGenerate = async () => {
+    if (enabledSources.length === 0) {
+      toast.error('No ready sources available. Upload and process sources first.');
+      return;
+    }
+    setIsGenerating(true);
+    try {
+      const sourceIds = enabledSources.map(s => s.id);
+      const result = await generateOutput('podcast', sourceIds);
+
+      if (result?.script) {
+        const script = result.script;
+        setPodcast({
+          id: result.output_id || crypto.randomUUID(),
+          title: script.title || 'Research Podcast',
+          duration: script.segments?.reduce((max: number, s: { timestamp: number }) => Math.max(max, s.timestamp + 30), 0) || 300,
+          segments: (script.segments || []).map((s: { speaker: string; content: string; timestamp: number }, i: number) => ({
+            id: `seg-${i}`,
+            speaker: s.speaker,
+            content: s.content,
+            timestamp: s.timestamp,
+          })),
+        });
+        toast.success('Podcast script generated!');
+      }
+    } catch (error) {
+      console.error('Generate podcast error:', error);
+      toast.error(error instanceof Error ? error.message : 'Failed to generate podcast');
+    } finally {
+      setIsGenerating(false);
+    }
+  };
+
+  if (!podcast) {
+    return (
+      <div className="flex h-full flex-col items-center justify-center p-6 text-center">
+        <div className="mb-4 flex h-16 w-16 items-center justify-center rounded-2xl bg-primary/10">
+          <Mic className="h-8 w-8 text-primary" />
+        </div>
+        <h3 className="mb-2 text-lg font-semibold text-foreground">Generate Podcast</h3>
+        <p className="mb-6 max-w-sm text-sm text-muted-foreground">
+          Create an AI-generated podcast discussion from your sources.
+        </p>
+        <Button onClick={handleGenerate} disabled={isGenerating || enabledSources.length === 0} className="gap-2">
+          {isGenerating ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Generating...
+            </>
+          ) : (
+            <>
+              <Mic className="h-4 w-4" />
+              Generate Podcast
+            </>
+          )}
+        </Button>
+        {enabledSources.length === 0 && (
+          <p className="mt-3 text-xs text-muted-foreground">Upload sources first</p>
+        )}
+      </div>
+    );
+  }
+
+  const displayPodcast = podcast;
 
   const formatTime = (seconds: number) => {
     const mins = Math.floor(seconds / 60);

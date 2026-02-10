@@ -128,7 +128,7 @@ export async function streamChat({ messages, sourceIds, onDelta, onDone, onError
       throw new Error('Not authenticated');
     }
 
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/notebook-chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -270,12 +270,29 @@ export async function fetchMessages(): Promise<ChatMessage[]> {
 export type OutputType = 'summary' | 'podcast' | 'quiz';
 
 export async function generateOutput(type: OutputType, sourceIds?: string[]) {
-  const { data, error } = await supabase.functions.invoke('generate-output', {
-    body: { output_type: type, source_ids: sourceIds },
+  if (type === 'podcast') {
+    const { data, error } = await supabase.functions.invoke('podcast-generation', {
+      body: { source_ids: sourceIds, style: 'conversational', duration_minutes: 5 },
+    });
+    if (error) {
+      console.error('Podcast generation error:', error);
+      throw error;
+    }
+    return data;
+  }
+
+  // summary, quiz, study_guide, faq, timeline, briefing → generate-notebook-details
+  const notebookTypeMap: Record<string, string> = {
+    summary: 'summary',
+    quiz: 'quiz',
+  };
+
+  const { data, error } = await supabase.functions.invoke('generate-notebook-details', {
+    body: { source_ids: sourceIds, notebook_type: notebookTypeMap[type] || type },
   });
 
   if (error) {
-    console.error('Generate output error:', error);
+    console.error('Generate notebook details error:', error);
     throw error;
   }
 
