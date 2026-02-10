@@ -11,3 +11,21 @@ verify_jwt = false
 
 [functions.generate-output]
 verify_jwt = false
+
+[functions.extract-text]
+verify_jwt = false
+
+[functions.generate-notebook-details]
+verify_jwt = false
+
+[functions.upsert-vector-store]
+verify_jwt = false
+
+[functions.process-additional-sources]
+verify_jwt = false
+
+[functions.notebook-chat]
+verify_jwt = false
+
+[functions.podcast-generation]
+verify_jwt = false
