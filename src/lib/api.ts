@@ -128,7 +128,7 @@ export async function streamChat({ messages, sourceIds, onDelta, onDone, onError
       throw new Error('Not authenticated');
     }
 
-    const response = await fetch(`${SUPABASE_URL}/functions/v1/notebook-chat`, {
+    const response = await fetch(`${SUPABASE_URL}/functions/v1/chat`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
