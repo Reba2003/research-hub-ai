@@ -9,6 +9,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { useAuth } from '@/hooks/useAuth';
 import { uploadFile, getFileType } from '@/lib/storage';
 import { createSource } from '@/lib/api';
+import { extractPdfText, isPdfFile } from '@/lib/pdf-extract';
 import { toast } from 'sonner';
 import type { Source, SourceType } from '@/types';
 
@@ -60,6 +61,19 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
           continue;
         }
 
+        // Extract text from PDFs client-side (avoids edge function memory limits)
+        let extractedContent: string | undefined;
+        if (isPdfFile(file)) {
+          try {
+            toast.info(`Extracting text from ${file.name}...`);
+            extractedContent = await extractPdfText(file);
+            console.log(`PDF text extracted: ${extractedContent.length} chars`);
+          } catch (pdfError) {
+            console.error('PDF extraction error:', pdfError);
+            toast.warning(`Could not extract PDF text for ${file.name}, uploading raw file`);
+          }
+        }
+
         // Upload to storage
         const uploadResult = await uploadFile(file, user.id);
         if (!uploadResult) {
@@ -67,13 +81,14 @@ export function UploadZone({ onUpload }: UploadZoneProps) {
           continue;
         }
 
-        // Create source record in database
+        // Create source record in database, including extracted content as metadata
         const source = await createSource({
           name: file.name,
           type: uploadResult.fileType,
           file_url: uploadResult.fileUrl,
           file_path: uploadResult.filePath,
           size: file.size,
+          metadata: extractedContent ? { extracted_content: extractedContent } : undefined,
         });
 
         if (source) {
