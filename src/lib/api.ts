@@ -113,15 +113,19 @@ export async function deleteSource(id: string) {
 
 // ============== Chat API (Streaming) ==============
 
+export type ModelProvider = 'gemini' | 'openai' | 'deepseek' | 'auto';
+
 export interface StreamChatOptions {
-  messages: Array<{ role: 'user' | 'assistant'; content: string }>;
+  messages: Array<{ role: 'user' | 'assistant'; content: string | Array<{ type: string; text?: string; image_url?: { url: string } }> }>;
   sourceIds?: string[];
+  modelProvider?: ModelProvider;
+  hasImage?: boolean;
   onDelta: (deltaText: string) => void;
   onDone: () => void;
   onError: (error: Error) => void;
 }
 
-export async function streamChat({ messages, sourceIds, onDelta, onDone, onError }: StreamChatOptions) {
+export async function streamChat({ messages, sourceIds, modelProvider = 'auto', hasImage = false, onDelta, onDone, onError }: StreamChatOptions) {
   try {
     const { data: { session } } = await supabase.auth.getSession();
     if (!session) {
@@ -137,6 +141,8 @@ export async function streamChat({ messages, sourceIds, onDelta, onDone, onError
       body: JSON.stringify({ 
         messages: messages.map(m => ({ role: m.role, content: m.content })),
         source_ids: sourceIds,
+        model_provider: modelProvider,
+        has_image: hasImage,
       }),
     });
 
