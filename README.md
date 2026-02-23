@@ -1,73 +1,24 @@
-# Welcome to your Lovable project
+# StudyTimeAI | Your Premium AI Research Partner
 
-## Project info
+StudyTimeAI is a sophisticated, multimodal research platform designed for deep document analysis and automated study content generation. It features a minimalist SaaS aesthetic inspired by Linear and Raycast.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+## Key Features
 
-## How can I edit this code?
+- **Multimodal Source Library**: Upload and analyze PDFs, MP4s, MP3s, Images, and YouTube URLs.
+- **3-Column Professional Layout**: Seamlessly navigate between your Source Library, AI Chat, and the Output Engine.
+- **Intelligent Citations**: Clickable chips that link directly to PDF page numbers, video timestamps, or YouTube segments.
+- **Automated Output Engine**: Generate structured Summaries, conversational Podcast scripts, and interactive Quizzes.
 
-There are several ways of editing your application.
+## Integrated AI Models
 
-**Use Lovable**
+This project utilizes a tri-model strategy to balance speed, reasoning, and multimodal depth:
+- **Google Gemini 2.0 Flash**: Powers multimodal analysis for diagrams, video, and audio.
+- **OpenAI GPT-4o/o1**: Utilized for high-fidelity reasoning and complex text extraction.
+- **DeepSeek-V3/R1**: Integrated for cost-effective, high-speed logical processing and coding tasks.
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+## Tech Stack
 
-Changes made via Lovable will be committed automatically to this repo.
-
-**Use your preferred IDE**
-
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
-
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
-npm run dev
-```
-
-**Edit a file directly in GitHub**
-
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
-
-**Use GitHub Codespaces**
-
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
-
-## What technologies are used for this project?
-
-This project is built with:
-
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
-
-## How can I deploy this project?
-
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
-
-## Can I connect a custom domain to my Lovable project?
-
-Yes, you can!
-
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
-
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+- **Frontend**: React, Vite, TypeScript, Tailwind CSS, Framer Motion.
+- **UI Components**: shadcn/ui, Lucide Icons.
+- **Backend & Database**: Supabase (Auth, Storage, Edge Functions).
+- **Automation**: n8n workflows for vector upserting and document processing.
