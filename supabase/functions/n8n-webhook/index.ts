@@ -5,7 +5,7 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-const N8N_WEBHOOK_URL = Deno.env.get('N8N_WEBHOOK_URL') || 'http://localhost:5678/webhook/user-action';
+const N8N_WEBHOOK_URL = Deno.env.get('N8N_WEBHOOK_URL') || 'https://arrivals-covered-breaks-settlement.trycloudflare.com/workflow/aP3FtfM4gg0s7mwk';
 
 type ActionType = 'signup' | 'new_conversation' | 'add_source';
 
