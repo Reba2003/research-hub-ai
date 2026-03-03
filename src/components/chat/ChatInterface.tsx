@@ -17,9 +17,9 @@ interface ChatInterfaceProps {
 
 const MODEL_OPTIONS: { value: ModelProvider; label: string; description: string }[] = [
   { value: 'auto', label: 'Auto', description: 'Lovable AI (default)' },
-  { value: 'gemini', label: 'Gemini 3 Flash', description: 'Vision & reasoning' },
-  { value: 'openai', label: 'GPT-4o', description: 'OpenAI' },
-  { value: 'deepseek', label: 'DeepSeek', description: 'DeepSeek Chat' },
+  { value: 'gemini', label: 'Gemini Flash', description: 'Vision & reasoning (OpenRouter)' },
+  { value: 'openai', label: 'GPT-4o', description: 'OpenAI (OpenRouter)' },
+  { value: 'deepseek', label: 'DeepSeek', description: 'DeepSeek Chat (OpenRouter)' },
 ];
 
 export function ChatInterface({ className }: ChatInterfaceProps) {
