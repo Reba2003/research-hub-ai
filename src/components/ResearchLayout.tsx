@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, LogOut } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -10,11 +10,47 @@ import { MobileBottomNav } from './MobileBottomNav';
 import { useResearchStore } from '@/hooks/useResearchStore';
 import { useAuth } from '@/hooks/useAuth';
 
+type ScreenSize = 'small' | 'medium' | 'large';
+
+function useScreenSize(): ScreenSize {
+  const [size, setSize] = useState<ScreenSize>('large');
+
+  useEffect(() => {
+    const update = () => {
+      const w = window.innerWidth;
+      if (w < 768) setSize('small');
+      else if (w < 1280) setSize('medium');
+      else setSize('large');
+    };
+    update();
+    window.addEventListener('resize', update);
+    return () => window.removeEventListener('resize', update);
+  }, []);
+
+  return size;
+}
+
 export function ResearchLayout() {
+  const screenSize = useScreenSize();
   const [showDesktopSources, setShowDesktopSources] = useState(true);
   const [showDesktopOutput, setShowDesktopOutput] = useState(true);
   const { activeOutputTab } = useResearchStore();
   const { signOut } = useAuth();
+
+  // Auto-manage panel visibility based on screen size
+  useEffect(() => {
+    if (screenSize === 'small') {
+      setShowDesktopSources(false);
+      setShowDesktopOutput(false);
+    } else if (screenSize === 'medium') {
+      // Medium: show only one panel at a time, prefer sources
+      setShowDesktopSources(true);
+      setShowDesktopOutput(false);
+    } else {
+      setShowDesktopSources(true);
+      setShowDesktopOutput(true);
+    }
+  }, [screenSize]);
 
   return (
     <div className="flex h-screen flex-col bg-background">
@@ -30,7 +66,7 @@ export function ResearchLayout() {
         </div>
 
         {/* Desktop toggle buttons */}
-        <div className="hidden gap-2 lg:flex">
+        <div className="hidden gap-2 md:flex">
           <Button
             variant={showDesktopSources ? 'secondary' : 'ghost'}
             size="sm"
@@ -62,33 +98,33 @@ export function ResearchLayout() {
       <div className="flex flex-1 overflow-hidden">
         {/* Desktop: Source Library */}
         <AnimatePresence mode="wait">
-          {showDesktopSources && (
+          {showDesktopSources && screenSize !== 'small' && (
             <motion.aside
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 320, opacity: 1 }}
+              animate={{ width: screenSize === 'medium' ? 280 : 320, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="hidden h-full border-r border-border lg:block"
+              className="hidden h-full min-w-[240px] border-r border-border md:block"
             >
               <SourceLibrary />
             </motion.aside>
           )}
         </AnimatePresence>
 
-        {/* Chat Interface - Always visible */}
-        <main className="flex-1 overflow-hidden pb-16 lg:pb-0">
+        {/* Chat Interface - Always visible, guaranteed min-width */}
+        <main className="min-w-0 flex-1 overflow-hidden pb-16 md:pb-0">
           <ChatInterface />
         </main>
 
         {/* Desktop: Output Engine */}
         <AnimatePresence mode="wait">
-          {showDesktopOutput && (
+          {showDesktopOutput && screenSize !== 'small' && (
             <motion.aside
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: 400, opacity: 1 }}
+              animate={{ width: screenSize === 'medium' ? 340 : 400, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="hidden h-full border-l border-border lg:block"
+              className="hidden h-full min-w-[280px] border-l border-border md:block"
             >
               <OutputEngine />
             </motion.aside>

@@ -15,47 +15,47 @@ interface ChatRequest {
 }
 
 function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
-  // If image is attached, always use Gemini 3 Flash for vision
+  // If image is attached, use Gemini via OpenRouter for vision
   if (hasImage) {
-    const key = Deno.env.get('GOOGLE_GEMINI_API_KEY');
-    if (!key) throw new Error('Google Gemini API key not configured');
+    const key = Deno.env.get('OPENROUTER_API_KEY');
+    if (!key) throw new Error('OpenRouter API key not configured');
     return {
-      url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+      url: 'https://openrouter.ai/api/v1/chat/completions',
       key,
-      model: 'gemini-2.5-flash-preview-05-20',
-      name: 'Gemini 3 Flash (Vision)',
+      model: 'google/gemini-2.5-flash-preview:thinking',
+      name: 'Gemini Flash (Vision via OpenRouter)',
     };
   }
 
   switch (provider) {
     case 'openai': {
-      const key = Deno.env.get('OPENAI_API_KEY');
-      if (!key) throw new Error('OpenAI API key not configured');
+      const key = Deno.env.get('OPENROUTER_API_KEY');
+      if (!key) throw new Error('OpenRouter API key not configured');
       return {
-        url: 'https://api.openai.com/v1/chat/completions',
+        url: 'https://openrouter.ai/api/v1/chat/completions',
         key,
-        model: 'gpt-4o',
-        name: 'OpenAI GPT-4o',
+        model: 'openai/gpt-4o',
+        name: 'GPT-4o (OpenRouter)',
       };
     }
     case 'deepseek': {
-      const key = Deno.env.get('DEEPSEEK_API_KEY');
-      if (!key) throw new Error('DeepSeek API key not configured');
+      const key = Deno.env.get('OPENROUTER_API_KEY');
+      if (!key) throw new Error('OpenRouter API key not configured');
       return {
-        url: 'https://api.deepseek.com/v1/chat/completions',
+        url: 'https://openrouter.ai/api/v1/chat/completions',
         key,
-        model: 'deepseek-chat',
-        name: 'DeepSeek Chat',
+        model: 'deepseek/deepseek-chat-v3-0324',
+        name: 'DeepSeek Chat (OpenRouter)',
       };
     }
     case 'gemini': {
-      const key = Deno.env.get('GOOGLE_GEMINI_API_KEY');
-      if (!key) throw new Error('Google Gemini API key not configured');
+      const key = Deno.env.get('OPENROUTER_API_KEY');
+      if (!key) throw new Error('OpenRouter API key not configured');
       return {
-        url: 'https://generativelanguage.googleapis.com/v1beta/openai/chat/completions',
+        url: 'https://openrouter.ai/api/v1/chat/completions',
         key,
-        model: 'gemini-2.5-flash-preview-05-20',
-        name: 'Gemini 3 Flash',
+        model: 'google/gemini-2.5-flash-preview:thinking',
+        name: 'Gemini Flash (OpenRouter)',
       };
     }
     case 'auto':
@@ -144,6 +144,8 @@ ${sourceContext}`;
       headers: {
         Authorization: `Bearer ${config.key}`,
         'Content-Type': 'application/json',
+        'HTTP-Referer': 'https://studytimeai.lovable.app',
+        'X-Title': 'StudyTimeAI',
       },
       body: JSON.stringify({
         model: config.model,
