@@ -5,23 +5,23 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// PLACEHOLDER: Replace with your actual n8n webhook URL
-const N8N_WEBHOOK_URL = Deno.env.get('N8N_WEBHOOK_URL') || 'https://your-n8n-instance.app.n8n.cloud/webhook/your-webhook-id';
+const N8N_WEBHOOK_URL = Deno.env.get('N8N_WEBHOOK_URL') || 'http://localhost:5678/webhook/user-action';
+
+type ActionType = 'signup' | 'new_conversation' | 'add_source';
 
 interface WebhookPayload {
-  event_type: 'file_upload' | 'message' | 'output_request';
-  user_id: string;
-  source_id?: string;
-  file_url?: string;
-  source_type?: string;
-  message_content?: string;
-  message_id?: string;
-  output_type?: 'summary' | 'podcast' | 'quiz';
-  output_id?: string;
+  action: ActionType;
+  userId: string;
+  email?: string;
+  name?: string;
+  title?: string;
+  conversationId?: string;
+  sourceType?: string;
+  sourceUrl?: string;
+  sourceId?: string;
 }
 
 Deno.serve(async (req) => {
-  // Handle CORS preflight
   if (req.method === 'OPTIONS') {
     return new Response('ok', { headers: corsHeaders });
   }
@@ -51,56 +51,45 @@ Deno.serve(async (req) => {
     }
 
     const body = await req.json();
-    const { event_type, source_id, file_url, source_type, message_content, message_id, output_type, output_id } = body;
+    const { action, title, conversationId, sourceType, sourceUrl, sourceId } = body;
 
-    // Build payload for n8n
+    // Build payload matching n8n workflow expected fields
     const webhookPayload: WebhookPayload = {
-      event_type,
-      user_id: user.id,
-      ...(source_id && { source_id }),
-      ...(file_url && { file_url }),
-      ...(source_type && { source_type }),
-      ...(message_content && { message_content }),
-      ...(message_id && { message_id }),
-      ...(output_type && { output_type }),
-      ...(output_id && { output_id }),
+      action,
+      userId: user.id,
+      email: user.email,
+      name: user.user_metadata?.display_name || user.email?.split('@')[0],
+      ...(title && { title }),
+      ...(conversationId && { conversationId }),
+      ...(sourceType && { sourceType }),
+      ...(sourceUrl && { sourceUrl }),
+      ...(sourceId && { sourceId }),
     };
 
-    console.log('Sending to n8n webhook:', JSON.stringify(webhookPayload, null, 2));
-
-    // Check if n8n URL is configured
-    if (N8N_WEBHOOK_URL.includes('your-n8n-instance')) {
-      console.warn('N8N_WEBHOOK_URL is not configured. Using mock response.');
-      
-      // Return mock success for development
-      return new Response(
-        JSON.stringify({ 
-          success: true, 
-          message: 'Webhook received (n8n not configured - mock response)',
-          payload: webhookPayload
-        }),
-        { status: 200, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
-      );
-    }
+    console.log('Sending to n8n:', JSON.stringify(webhookPayload, null, 2));
 
     // Send to n8n webhook
     const n8nResponse = await fetch(N8N_WEBHOOK_URL, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(webhookPayload),
     });
 
     if (!n8nResponse.ok) {
-      console.error('n8n webhook error:', await n8nResponse.text());
+      const errText = await n8nResponse.text();
+      console.error('n8n webhook error:', errText);
       return new Response(
-        JSON.stringify({ error: 'Failed to trigger n8n workflow' }),
+        JSON.stringify({ error: 'Failed to trigger n8n workflow', details: errText }),
         { status: 500, headers: { ...corsHeaders, 'Content-Type': 'application/json' } }
       );
     }
 
-    const n8nResult = await n8nResponse.json();
+    let n8nResult;
+    try {
+      n8nResult = await n8nResponse.json();
+    } catch {
+      n8nResult = { success: true };
+    }
     
     return new Response(
       JSON.stringify({ success: true, data: n8nResult }),
