@@ -101,10 +101,10 @@ export function ResearchLayout() {
           {showDesktopSources && screenSize !== 'small' && (
             <motion.aside
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: screenSize === 'medium' ? 280 : 320, opacity: 1 }}
+              animate={{ width: screenSize === 'medium' ? 300 : 340, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="hidden h-full min-w-[240px] border-r border-border md:block"
+              className="hidden h-full min-w-[300px] border-r border-border md:block"
             >
               <SourceLibrary />
             </motion.aside>
