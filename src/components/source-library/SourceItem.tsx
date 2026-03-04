@@ -1,6 +1,6 @@
 import { motion } from 'framer-motion';
 import { FileText, Video, Music, Type, Youtube, Image, Trash2, Loader2, CheckCircle2, AlertCircle } from 'lucide-react';
-import { Switch } from '@/components/ui/switch';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Button } from '@/components/ui/button';
 import type { Source } from '@/types';
 
@@ -20,96 +20,56 @@ const iconMap = {
   image: Image,
 };
 
-const statusColors = {
-  idle: 'bg-muted',
-  processing: 'bg-warning',
-  completed: 'bg-success',
-  error: 'bg-destructive',
-};
-
 export function SourceItem({ source, onToggle, onRemove, isSelected }: SourceItemProps) {
   const Icon = iconMap[source.type];
 
-  const formatSize = (bytes?: number) => {
-    if (!bytes) return '';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  };
-
-  const formatDuration = (seconds?: number) => {
-    if (!seconds) return '';
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
-
   return (
     <motion.div
-      initial={{ opacity: 0, x: -20 }}
+      initial={{ opacity: 0, x: -10 }}
       animate={{ opacity: 1, x: 0 }}
-      exit={{ opacity: 0, x: -20 }}
-      className={`group relative flex items-center gap-2 rounded-lg border p-2 transition-all ${
+      exit={{ opacity: 0, x: -10 }}
+      className={`group flex items-center gap-2 rounded-lg px-3 py-2 transition-colors ${
         isSelected
-          ? 'border-primary/50 bg-primary/10'
-          : source.enabled
-          ? 'border-border bg-card hover:border-primary/30'
-          : 'border-border/50 bg-card/50'
+          ? 'bg-primary/10'
+          : 'hover:bg-secondary/50'
       }`}
     >
-      {/* Status indicator */}
-      <div className={`absolute left-0 top-1/2 h-8 w-1 -translate-y-1/2 rounded-r-full ${statusColors[source.status]}`} />
-
       {/* Icon */}
-      <div className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md ${
-        source.enabled ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground'
+      <div className="flex h-7 w-7 shrink-0 items-center justify-center rounded-md bg-secondary text-muted-foreground">
+        <Icon className="h-3.5 w-3.5" />
+      </div>
+
+      {/* Name */}
+      <span className={`flex-1 truncate text-sm ${
+        source.enabled ? 'text-foreground' : 'text-muted-foreground'
       }`}>
-        <Icon className="h-4 w-4" />
-      </div>
+        {source.name}
+      </span>
 
-      {/* Content */}
-      <div className="min-w-0 flex-1">
-        <p className={`truncate text-sm font-medium ${
-          source.enabled ? 'text-foreground' : 'text-muted-foreground'
-        }`}>
-          {source.name}
-        </p>
-        <div className="flex items-center gap-2 text-xs text-muted-foreground">
-          {source.pageCount && <span>{source.pageCount} pages</span>}
-          {source.duration && <span>{formatDuration(source.duration)}</span>}
-          {source.size && <span>{formatSize(source.size)}</span>}
-        </div>
-      </div>
+      {/* Status */}
+      {source.status === 'processing' && (
+        <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-warning" />
+      )}
+      {source.status === 'error' && (
+        <AlertCircle className="h-3.5 w-3.5 shrink-0 text-destructive" />
+      )}
 
-      {/* Status icon */}
-      <div className="flex items-center gap-2">
-        {source.status === 'processing' && (
-          <Loader2 className="h-4 w-4 animate-spin text-warning" />
-        )}
-        {source.status === 'completed' && (
-          <CheckCircle2 className="h-4 w-4 text-success" />
-        )}
-        {source.status === 'error' && (
-          <AlertCircle className="h-4 w-4 text-destructive" />
-        )}
+      {/* Delete */}
+      <Button
+        variant="ghost"
+        size="icon"
+        className="h-6 w-6 shrink-0 opacity-0 transition-opacity group-hover:opacity-100"
+        onClick={(e) => { e.stopPropagation(); onRemove(); }}
+      >
+        <Trash2 className="h-3 w-3 text-muted-foreground hover:text-destructive" />
+      </Button>
 
-        {/* Toggle */}
-        <Switch
-          checked={source.enabled}
-          onCheckedChange={onToggle}
-          className="data-[state=checked]:bg-primary"
-        />
-
-        {/* Remove button */}
-        <Button
-          variant="ghost"
-          size="icon"
-          className="h-7 w-7 shrink-0"
-          onClick={onRemove}
-        >
-          <Trash2 className="h-3.5 w-3.5 text-muted-foreground hover:text-destructive" />
-        </Button>
-      </div>
+      {/* Checkbox toggle */}
+      <Checkbox
+        checked={source.enabled}
+        onCheckedChange={onToggle}
+        className="shrink-0"
+      />
     </motion.div>
   );
 }

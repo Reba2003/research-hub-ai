@@ -1,11 +1,11 @@
-import { motion, AnimatePresence } from 'framer-motion';
-import { Library, ChevronDown, ChevronUp } from 'lucide-react';
+import { AnimatePresence } from 'framer-motion';
+import { Plus } from 'lucide-react';
 import { useState, useEffect } from 'react';
 import { SourceItem } from './SourceItem';
 import { UploadZone } from './UploadZone';
 import { useResearchStore } from '@/hooks/useResearchStore';
 import { Button } from '@/components/ui/button';
-import { ScrollArea } from '@/components/ui/scroll-area';
+import { Checkbox } from '@/components/ui/checkbox';
 import { fetchSources, deleteSource as apiDeleteSource } from '@/lib/api';
 import { supabase } from '@/integrations/supabase/client';
 import type { Source } from '@/types';
@@ -16,17 +16,14 @@ interface SourceLibraryProps {
 
 export function SourceLibrary({ className }: SourceLibraryProps) {
   const { sources, addSource, removeSource, toggleSource, selectedCitation, updateSourceStatus } = useResearchStore();
-  const [isCollapsed, setIsCollapsed] = useState(false);
+  const [showUpload, setShowUpload] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Load sources from database on mount
   useEffect(() => {
     const loadSources = async () => {
       try {
         const dbSources = await fetchSources();
-        // Clear existing and add all from DB
         const store = useResearchStore.getState();
-        // Only add sources that aren't already in the store
         dbSources.forEach((source) => {
           if (!store.sources.find((s) => s.id === source.id)) {
             store.addSource(source);
@@ -38,38 +35,25 @@ export function SourceLibrary({ className }: SourceLibraryProps) {
         setIsLoading(false);
       }
     };
-    
     loadSources();
   }, []);
 
-  // Subscribe to realtime source status updates
   useEffect(() => {
     const channel = supabase
       .channel('sources-status')
-      .on(
-        'postgres_changes',
-        {
-          event: 'UPDATE',
-          schema: 'public',
-          table: 'sources',
-        },
-        (payload) => {
-          const updatedSource = payload.new as { id: string; status: string };
-          if (updatedSource.status) {
-            updateSourceStatus(updatedSource.id, updatedSource.status as Source['status']);
-          }
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sources' }, (payload) => {
+        const updatedSource = payload.new as { id: string; status: string };
+        if (updatedSource.status) {
+          updateSourceStatus(updatedSource.id, updatedSource.status as Source['status']);
         }
-      )
+      })
       .subscribe();
-
-    return () => {
-      supabase.removeChannel(channel);
-    };
+    return () => { supabase.removeChannel(channel); };
   }, [updateSourceStatus]);
 
   const handleUpload = (sourceData: Source) => {
-    // Source already has id and uploadedAt from API
     addSource(sourceData);
+    setShowUpload(false);
   };
 
   const handleRemove = async (id: string) => {
@@ -81,75 +65,73 @@ export function SourceLibrary({ className }: SourceLibraryProps) {
     }
   };
 
-  const enabledCount = sources.filter((s) => s.enabled && s.status === 'ready').length;
+  const allEnabled = sources.length > 0 && sources.every(s => s.enabled);
+
+  const toggleAll = () => {
+    sources.forEach(s => {
+      if (allEnabled ? s.enabled : !s.enabled) {
+        toggleSource(s.id);
+      }
+    });
+  };
 
   return (
-    <div className={`flex h-full flex-col bg-sidebar ${className}`}>
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-sidebar-border p-4">
-        <div className="flex items-center gap-2">
-          <Library className="h-5 w-5 text-primary" />
-          <h2 className="font-semibold text-foreground">Source Library</h2>
+    <div className={`flex h-full flex-col ${className}`}>
+      {/* Sticky header */}
+      <div className="sticky top-0 z-10 border-b border-border bg-sidebar p-3">
+        <div className="mb-2 flex items-center justify-between">
+          <h2 className="text-sm font-semibold text-foreground">Sources</h2>
         </div>
-        <div className="flex items-center gap-2">
-          <span className="rounded-full bg-primary/10 px-2 py-0.5 text-xs font-medium text-primary">
-            {enabledCount} active
-          </span>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 lg:hidden"
-            onClick={() => setIsCollapsed(!isCollapsed)}
-          >
-            {isCollapsed ? <ChevronDown className="h-4 w-4" /> : <ChevronUp className="h-4 w-4" />}
-          </Button>
-        </div>
+        <Button
+          onClick={() => setShowUpload(!showUpload)}
+          variant="outline"
+          className="w-full gap-2 text-sm"
+          size="sm"
+        >
+          <Plus className="h-4 w-4" />
+          Add sources
+        </Button>
       </div>
 
-      <AnimatePresence>
-        {!isCollapsed && (
-          <motion.div
-            initial={{ height: 0, opacity: 0 }}
-            animate={{ height: 'auto', opacity: 1 }}
-            exit={{ height: 0, opacity: 0 }}
-            className="flex flex-1 flex-col overflow-hidden"
-          >
-            {/* Upload Zone */}
-            <div className="border-b border-sidebar-border p-4">
-              <UploadZone onUpload={handleUpload} />
-            </div>
+      {/* Upload zone (collapsible) */}
+      {showUpload && (
+        <div className="border-b border-border p-3">
+          <UploadZone onUpload={handleUpload} />
+        </div>
+      )}
 
-            {/* Source List */}
-            <ScrollArea className="flex-1">
-              <div className="space-y-2 p-4">
-                <AnimatePresence mode="popLayout">
-                  {sources.length === 0 ? (
-                    <motion.p
-                      initial={{ opacity: 0 }}
-                      animate={{ opacity: 1 }}
-                      className="py-8 text-center text-sm text-muted-foreground"
-                    >
-                      No sources uploaded yet.
-                      <br />
-                      Upload files to get started.
-                    </motion.p>
-                  ) : (
-                    sources.map((source) => (
-                      <SourceItem
-                        key={source.id}
-                        source={source}
-                        onToggle={() => toggleSource(source.id)}
-                        onRemove={() => handleRemove(source.id)}
-                        isSelected={selectedCitation === source.id}
-                      />
-                    ))
-                  )}
-                </AnimatePresence>
-              </div>
-            </ScrollArea>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      {/* Select all */}
+      {sources.length > 0 && (
+        <div className="flex items-center justify-between border-b border-border px-3 py-2">
+          <span className="text-xs text-muted-foreground">Select all sources</span>
+          <Checkbox checked={allEnabled} onCheckedChange={toggleAll} />
+        </div>
+      )}
+
+      {/* Source list - scrollable */}
+      <div className="flex-1 overflow-y-auto">
+        <div className="py-1">
+          <AnimatePresence mode="popLayout">
+            {sources.length === 0 && !isLoading ? (
+              <p className="px-3 py-8 text-center text-xs text-muted-foreground">
+                No sources yet.
+                <br />
+                Click "Add sources" to get started.
+              </p>
+            ) : (
+              sources.map((source) => (
+                <SourceItem
+                  key={source.id}
+                  source={source}
+                  onToggle={() => toggleSource(source.id)}
+                  onRemove={() => handleRemove(source.id)}
+                  isSelected={selectedCitation === source.id}
+                />
+              ))
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
     </div>
   );
 }
