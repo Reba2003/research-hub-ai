@@ -26,7 +26,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
   const [input, setInput] = useState('');
   const [selectedModel, setSelectedModel] = useState<ModelProvider>('auto');
   const [attachedImage, setAttachedImage] = useState<{ url: string; file: File } | null>(null);
-  const { messages, addMessage, updateMessage, isTyping, setIsTyping, sources } = useResearchStore();
+  const { messages, addMessage, updateMessage, isTyping, setIsTyping, sources, activeConversationId } = useResearchStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -109,7 +109,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
     };
     addMessage(assistantMessage);
 
-    createMessage({ role: 'user', content: displayContent }).catch(console.error);
+    createMessage({ role: 'user', content: displayContent, conversation_id: activeConversationId || undefined }).catch(console.error);
 
     const sourceIds = enabledSources.map(s => s.id);
 
@@ -132,7 +132,7 @@ export function ChatInterface({ className }: ChatInterfaceProps) {
       onDone: () => {
         setIsTyping(false);
         if (fullContent) {
-          createMessage({ role: 'assistant', content: fullContent }).catch(console.error);
+          createMessage({ role: 'assistant', content: fullContent, conversation_id: activeConversationId || undefined }).catch(console.error);
         }
       },
       onError: (error) => {

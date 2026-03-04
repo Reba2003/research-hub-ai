@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { SourceLibrary } from './source-library/SourceLibrary';
 import { ChatInterface } from './chat/ChatInterface';
 import { OutputEngine } from './output/OutputEngine';
+import { ConversationSidebar } from './ConversationSidebar';
 import { MobileSourceSheet } from './MobileSourceSheet';
 import { MobileBottomNav } from './MobileBottomNav';
 import { useResearchStore } from '@/hooks/useResearchStore';
@@ -37,13 +38,11 @@ export function ResearchLayout() {
   const { activeOutputTab } = useResearchStore();
   const { signOut } = useAuth();
 
-  // Auto-manage panel visibility based on screen size
   useEffect(() => {
     if (screenSize === 'small') {
       setShowDesktopSources(false);
       setShowDesktopOutput(false);
     } else if (screenSize === 'medium') {
-      // Medium: show only one panel at a time, prefer sources
       setShowDesktopSources(true);
       setShowDesktopOutput(false);
     } else {
@@ -65,7 +64,6 @@ export function ResearchLayout() {
           </div>
         </div>
 
-        {/* Desktop toggle buttons */}
         <div className="hidden gap-2 md:flex">
           <Button
             variant={showDesktopSources ? 'secondary' : 'ghost'}
@@ -96,22 +94,29 @@ export function ResearchLayout() {
 
       {/* Main Content */}
       <div className="flex flex-1 overflow-hidden">
+        {/* Conversation Sidebar - always visible on desktop */}
+        {screenSize !== 'small' && (
+          <aside className="hidden w-52 shrink-0 border-r border-border md:block">
+            <ConversationSidebar />
+          </aside>
+        )}
+
         {/* Desktop: Source Library */}
         <AnimatePresence mode="wait">
           {showDesktopSources && screenSize !== 'small' && (
             <motion.aside
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: screenSize === 'medium' ? 300 : 340, opacity: 1 }}
+              animate={{ width: screenSize === 'medium' ? 240 : 260, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="hidden h-full min-w-[300px] border-r border-border md:block"
+              className="hidden h-full shrink-0 overflow-hidden border-r border-border md:block"
             >
               <SourceLibrary />
             </motion.aside>
           )}
         </AnimatePresence>
 
-        {/* Chat Interface - Always visible, guaranteed min-width */}
+        {/* Chat Interface */}
         <main className="min-w-0 flex-1 overflow-hidden pb-16 md:pb-0">
           <ChatInterface />
         </main>
@@ -121,10 +126,10 @@ export function ResearchLayout() {
           {showDesktopOutput && screenSize !== 'small' && (
             <motion.aside
               initial={{ width: 0, opacity: 0 }}
-              animate={{ width: screenSize === 'medium' ? 340 : 400, opacity: 1 }}
+              animate={{ width: screenSize === 'medium' ? 280 : 320, opacity: 1 }}
               exit={{ width: 0, opacity: 0 }}
               transition={{ duration: 0.2 }}
-              className="hidden h-full min-w-[280px] border-l border-border md:block"
+              className="hidden h-full shrink-0 overflow-hidden border-l border-border md:block"
             >
               <OutputEngine />
             </motion.aside>
@@ -132,18 +137,8 @@ export function ResearchLayout() {
         </AnimatePresence>
       </div>
 
-      {/* Mobile: Bottom Navigation */}
       <MobileBottomNav />
-
-      {/* Mobile: Source Library Sheet */}
       <MobileSourceSheet />
-
-      {/* Mobile: Output Panel */}
-      <div className="fixed inset-x-0 bottom-16 top-14 z-20 hidden overflow-hidden bg-sidebar">
-        {activeOutputTab === 'summary' && (
-          <div className="h-full">Summary Tab Mobile</div>
-        )}
-      </div>
     </div>
   );
 }

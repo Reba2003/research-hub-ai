@@ -222,18 +222,24 @@ export async function createMessage(message: {
   role: 'user' | 'assistant';
   content: string;
   citations?: unknown[];
+  conversation_id?: string;
 }): Promise<ChatMessage | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
 
+  const insertData: Record<string, unknown> = {
+    user_id: user.id,
+    role: message.role,
+    content: message.content,
+    citations: (message.citations || []) as Json,
+  };
+  if (message.conversation_id) {
+    insertData.conversation_id = message.conversation_id;
+  }
+
   const { data, error } = await supabase
     .from('messages')
-    .insert([{
-      user_id: user.id,
-      role: message.role,
-      content: message.content,
-      citations: (message.citations || []) as Json,
-    }])
+    .insert([insertData as any])
     .select()
     .single();
 
