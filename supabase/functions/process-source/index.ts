@@ -47,6 +47,16 @@ function extractPageNumbers(text: string): number[] {
   return pages;
 }
 
+function extractTimestamps(text: string): string[] {
+  const tsRegex = /<<<TIMESTAMP_([\d:]+)>>>/g;
+  const timestamps: string[] = [];
+  let match;
+  while ((match = tsRegex.exec(text)) !== null) {
+    timestamps.push(match[1]);
+  }
+  return timestamps;
+}
+
 function formatTimestamp(seconds: number): string {
   const h = Math.floor(seconds / 3600);
   const m = Math.floor((seconds % 3600) / 60);
