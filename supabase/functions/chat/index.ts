@@ -22,8 +22,9 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
     return {
       url: 'https://openrouter.ai/api/v1/chat/completions',
       key,
-      model: 'google/gemini-2.5-flash-preview:thinking',
+      model: 'google/gemini-2.5-flash',
       name: 'Gemini Flash (Vision via OpenRouter)',
+      maxChars: 800000,
     };
   }
 
@@ -36,6 +37,7 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
         key,
         model: 'openai/gpt-4o',
         name: 'GPT-4o (OpenRouter)',
+        maxChars: 400000,
       };
     }
     case 'deepseek': {
@@ -44,8 +46,9 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
       return {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key,
-        model: 'deepseek/deepseek-chat-v3-0324',
+        model: 'deepseek/deepseek-chat',
         name: 'DeepSeek Chat (OpenRouter)',
+        maxChars: 500000,
       };
     }
     case 'gemini': {
@@ -54,13 +57,13 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
       return {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key,
-        model: 'google/gemini-2.5-flash-preview:thinking',
+        model: 'google/gemini-2.5-flash',
         name: 'Gemini Flash (OpenRouter)',
+        maxChars: 800000,
       };
     }
     case 'auto':
     default: {
-      // Default: use Lovable AI gateway
       const key = Deno.env.get('LOVABLE_API_KEY');
       if (!key) throw new Error('LOVABLE_API_KEY not configured');
       return {
@@ -68,6 +71,7 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
         key,
         model: 'google/gemini-2.5-flash',
         name: 'Auto (Lovable AI)',
+        maxChars: 800000,
       };
     }
   }
@@ -104,6 +108,9 @@ Deno.serve(async (req) => {
 
     const { messages, source_ids, model_provider = 'auto', has_image = false }: ChatRequest = await req.json();
 
+    // Get provider configuration first so we know context limits
+    const config = getProviderConfig(model_provider, has_image);
+
     // Fetch documents for enabled sources
     let sourceContext = '';
     if (source_ids && source_ids.length > 0) {
@@ -115,11 +122,22 @@ Deno.serve(async (req) => {
         .order('source_id');
 
       if (documents && documents.length > 0) {
-        sourceContext = '\n\nSource materials:\n' + documents.map((doc, i) => {
+        let totalChars = 0;
+        const chunks: string[] = [];
+        for (const doc of documents) {
           const meta = doc.metadata as Record<string, unknown> || {};
           const chunkType = meta.chunk_type === 'summary' ? ' (Summary)' : '';
-          return `[Source ${i + 1} - ${meta.source_name || 'Unknown'}${chunkType}]: ${doc.content}`;
-        }).join('\n\n');
+          const chunk = `[Source ${chunks.length + 1} - ${meta.source_name || 'Unknown'}${chunkType}]: ${doc.content}`;
+          if (totalChars + chunk.length > config.maxChars) {
+            console.log(`Context truncated at ${totalChars} chars (limit: ${config.maxChars}) after ${chunks.length} chunks`);
+            break;
+          }
+          chunks.push(chunk);
+          totalChars += chunk.length;
+        }
+        if (chunks.length > 0) {
+          sourceContext = '\n\nSource materials:\n' + chunks.join('\n\n');
+        }
       }
     }
 
@@ -134,9 +152,6 @@ When answering questions:
 6. If an image is provided, analyze it thoroughly and relate it to the source materials when relevant
 
 ${sourceContext}`;
-
-    // Get provider configuration
-    const config = getProviderConfig(model_provider, has_image);
     console.log(`Using model: ${config.name} (provider: ${model_provider}, hasImage: ${has_image})`);
 
     const response = await fetch(config.url, {
