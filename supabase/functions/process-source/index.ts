@@ -115,9 +115,12 @@ Deno.serve(async (req) => {
     else if (sourceData.type === 'text') {
       rawContent = (sourceData.metadata?.content as string) || '';
     }
-    // Priority 3: YouTube
+    // Priority 3: YouTube – extract real transcript with timestamps
     else if (sourceData.type === 'youtube') {
-      rawContent = `YouTube video: ${sourceData.file_url}. This video needs to be analyzed.`;
+      rawContent = await extractYoutubeTranscript(sourceData.file_url || '');
+      if (!rawContent) {
+        rawContent = `YouTube video: ${sourceData.file_url}. Transcript could not be extracted automatically.`;
+      }
     }
     // Priority 4: Download text files from storage
     else if (sourceData.file_path) {
