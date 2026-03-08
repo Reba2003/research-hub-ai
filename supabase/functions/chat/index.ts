@@ -46,7 +46,7 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
       return {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key,
-        model: 'deepseek/deepseek-chat-v3-0324',
+        model: 'deepseek/deepseek-chat',
         name: 'DeepSeek Chat (OpenRouter)',
         maxChars: 500000,
       };
