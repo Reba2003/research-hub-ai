@@ -51,6 +51,7 @@ export const useResearchStore = create<ResearchStore>((set) => ({
   updateSourceStatus: (id, status) => set((state) => ({
     sources: state.sources.map((s) => (s.id === id ? { ...s, status } : s)),
   })),
+  clearSources: () => set({ sources: [] }),
 
   // Chat
   messages: [],
