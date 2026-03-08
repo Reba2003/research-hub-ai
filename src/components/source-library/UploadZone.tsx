@@ -166,6 +166,7 @@ export function UploadZone({ onUpload, conversationId }: UploadZoneProps) {
           type: 'text',
           size: textContent.length,
           metadata: { content: textContent },
+          conversation_id: conversationId || undefined,
         });
 
         if (source) {
