@@ -15,9 +15,10 @@ import type { Source, SourceType } from '@/types';
 
 interface UploadZoneProps {
   onUpload: (source: Source) => void;
+  conversationId?: string | null;
 }
 
-export function UploadZone({ onUpload }: UploadZoneProps) {
+export function UploadZone({ onUpload, conversationId }: UploadZoneProps) {
   const [isDragging, setIsDragging] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [youtubeUrl, setYoutubeUrl] = useState('');
