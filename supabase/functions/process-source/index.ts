@@ -15,22 +15,36 @@ interface SourceData {
   user_id: string;
 }
 
-function chunkText(text: string, maxChars = 4000): string[] {
-  if (text.length <= maxChars) return [text];
-  const chunks: string[] = [];
+function chunkText(text: string, maxChars = 4000): Array<{ content: string; pages: number[] }> {
+  if (text.length <= maxChars) {
+    const pages = extractPageNumbers(text);
+    return [{ content: text, pages }];
+  }
+  const chunks: Array<{ content: string; pages: number[] }> = [];
   let remaining = text;
   while (remaining.length > 0) {
     if (remaining.length <= maxChars) {
-      chunks.push(remaining);
+      chunks.push({ content: remaining, pages: extractPageNumbers(remaining) });
       break;
     }
     let breakPoint = remaining.lastIndexOf('. ', maxChars);
     if (breakPoint < maxChars * 0.5) breakPoint = remaining.lastIndexOf('\n', maxChars);
     if (breakPoint < maxChars * 0.3) breakPoint = maxChars;
-    chunks.push(remaining.slice(0, breakPoint + 1).trim());
+    const chunkContent = remaining.slice(0, breakPoint + 1).trim();
+    chunks.push({ content: chunkContent, pages: extractPageNumbers(chunkContent) });
     remaining = remaining.slice(breakPoint + 1).trim();
   }
   return chunks;
+}
+
+function extractPageNumbers(text: string): number[] {
+  const pageMarkerRegex = /<<<PAGE_(\d+)>>>/g;
+  const pages: number[] = [];
+  let match;
+  while ((match = pageMarkerRegex.exec(text)) !== null) {
+    pages.push(parseInt(match[1], 10));
+  }
+  return pages;
 }
 
 Deno.serve(async (req) => {
