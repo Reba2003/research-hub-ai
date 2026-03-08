@@ -109,18 +109,18 @@ async function extractYoutubeTranscript(url: string): Promise<string> {
     }
 
     const data = await response.json();
-    const segments = data.segments as Array<{ start: number; end?: number; text: string }> | undefined;
+    const transcript = data.transcript as Array<{ start: number; duration: number; text: string }> | undefined;
 
-    if (!segments || segments.length === 0) {
-      console.log('[process-source] TranscriptAPI returned no segments');
+    if (!transcript || transcript.length === 0) {
+      console.log('[process-source] TranscriptAPI returned no transcript segments');
       return '';
     }
 
-    console.log(`[process-source] TranscriptAPI returned ${segments.length} segments`);
+    console.log(`[process-source] TranscriptAPI returned ${transcript.length} segments`);
 
     // Convert to our timestamped marker format
     const result: string[] = [];
-    for (const seg of segments) {
+    for (const seg of transcript) {
       const timestamp = formatTimestamp(Math.floor(seg.start));
       if (seg.text.trim()) {
         result.push(`<<<TIMESTAMP_${timestamp}>>>\n${seg.text.trim()}`);
