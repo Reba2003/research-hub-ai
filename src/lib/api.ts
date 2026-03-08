@@ -13,6 +13,7 @@ export async function createSource(source: {
   file_path?: string;
   size?: number;
   metadata?: Record<string, unknown>;
+  conversation_id?: string;
 }): Promise<Source | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -27,6 +28,7 @@ export async function createSource(source: {
       file_path: source.file_path,
       size: source.size,
       metadata: (source.metadata || {}) as Json,
+      conversation_id: source.conversation_id || null,
     }])
     .select()
     .single();
@@ -65,11 +67,17 @@ export async function triggerSourceProcessing(sourceId: string) {
   return data;
 }
 
-export async function fetchSources(): Promise<Source[]> {
-  const { data, error } = await supabase
+export async function fetchSources(conversationId?: string): Promise<Source[]> {
+  let query = supabase
     .from('sources')
     .select('*')
     .order('created_at', { ascending: false });
+
+  if (conversationId) {
+    query = query.eq('conversation_id', conversationId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('Fetch sources error:', error);

@@ -1,0 +1,1 @@
+ALTER TABLE public.sources ADD COLUMN conversation_id uuid REFERENCES public.conversations(id) ON DELETE CASCADE;
