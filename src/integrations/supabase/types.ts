@@ -176,6 +176,7 @@ export type Database = {
       }
       sources: {
         Row: {
+          conversation_id: string | null
           created_at: string
           enabled: boolean
           file_path: string | null
@@ -190,6 +191,7 @@ export type Database = {
           user_id: string
         }
         Insert: {
+          conversation_id?: string | null
           created_at?: string
           enabled?: boolean
           file_path?: string | null
@@ -204,6 +206,7 @@ export type Database = {
           user_id: string
         }
         Update: {
+          conversation_id?: string | null
           created_at?: string
           enabled?: boolean
           file_path?: string | null
@@ -217,7 +220,15 @@ export type Database = {
           updated_at?: string
           user_id?: string
         }
-        Relationships: []
+        Relationships: [
+          {
+            foreignKeyName: "sources_conversation_id_fkey"
+            columns: ["conversation_id"]
+            isOneToOne: false
+            referencedRelation: "conversations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
     }
     Views: {
