@@ -206,6 +206,20 @@ Deno.serve(async (req) => {
     }
     // Priority 3: YouTube – extract real transcript with timestamps
     else if (sourceData.type === 'youtube') {
+      // Fetch video title via oEmbed
+      try {
+        const oembedRes = await fetch(`https://www.youtube.com/oembed?url=${encodeURIComponent(sourceData.file_url || '')}&format=json`);
+        if (oembedRes.ok) {
+          const oembed = await oembedRes.json();
+          if (oembed.title) {
+            await supabase.from('sources').update({ name: oembed.title }).eq('id', source_id);
+            console.log(`[process-source] Updated YouTube title: ${oembed.title}`);
+          }
+        }
+      } catch (e) {
+        console.warn('[process-source] Could not fetch YouTube title:', e);
+      }
+
       rawContent = await extractYoutubeTranscript(sourceData.file_url || '');
       if (!rawContent) {
         rawContent = `YouTube video: ${sourceData.file_url}. Transcript could not be extracted automatically.`;

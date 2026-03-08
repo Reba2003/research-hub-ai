@@ -8,6 +8,7 @@ interface ResearchStore {
   removeSource: (id: string) => void;
   toggleSource: (id: string) => void;
   updateSourceStatus: (id: string, status: Source['status']) => void;
+  updateSourceName: (id: string, name: string) => void;
   clearSources: () => void;
 
   // Chat
@@ -50,6 +51,9 @@ export const useResearchStore = create<ResearchStore>((set) => ({
   })),
   updateSourceStatus: (id, status) => set((state) => ({
     sources: state.sources.map((s) => (s.id === id ? { ...s, status } : s)),
+  })),
+  updateSourceName: (id, name) => set((state) => ({
+    sources: state.sources.map((s) => (s.id === id ? { ...s, name } : s)),
   })),
   clearSources: () => set({ sources: [] }),
 
