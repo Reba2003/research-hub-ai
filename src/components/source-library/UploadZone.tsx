@@ -90,6 +90,7 @@ export function UploadZone({ onUpload, conversationId }: UploadZoneProps) {
           file_path: uploadResult.filePath,
           size: file.size,
           metadata: extractedContent ? { extracted_content: extractedContent } : undefined,
+          conversation_id: conversationId || undefined,
         });
 
         if (source) {
