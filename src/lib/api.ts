@@ -67,11 +67,17 @@ export async function triggerSourceProcessing(sourceId: string) {
   return data;
 }
 
-export async function fetchSources(): Promise<Source[]> {
-  const { data, error } = await supabase
+export async function fetchSources(conversationId?: string): Promise<Source[]> {
+  let query = supabase
     .from('sources')
     .select('*')
     .order('created_at', { ascending: false });
+
+  if (conversationId) {
+    query = query.eq('conversation_id', conversationId);
+  }
+
+  const { data, error } = await query;
 
   if (error) {
     console.error('Fetch sources error:', error);
