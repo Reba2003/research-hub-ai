@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Bot, User } from 'lucide-react';
 import { CitationChip } from './CitationChip';
 import { useResearchStore } from '@/hooks/useResearchStore';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ChatMessage as ChatMessageType } from '@/types';
 
 interface ChatMessageProps {
