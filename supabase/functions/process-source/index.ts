@@ -197,6 +197,8 @@ function parseTranscriptXml(xml: string): string {
   console.log(`[process-source] Extracted ${segments.length} transcript segments`);
   return segments.join('\n');
 }
+
+Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
