@@ -47,7 +47,128 @@ function extractPageNumbers(text: string): number[] {
   return pages;
 }
 
-Deno.serve(async (req) => {
+function formatTimestamp(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function extractVideoId(url: string): string | null {
+  const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : null;
+}
+
+async function extractYoutubeTranscript(url: string): Promise<string> {
+  const videoId = extractVideoId(url);
+  if (!videoId) {
+    console.error('[process-source] Could not extract YouTube video ID from:', url);
+    return '';
+  }
+
+  console.log('[process-source] Fetching YouTube transcript for video:', videoId);
+
+  try {
+    // Fetch the YouTube video page to find caption tracks
+    const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+
+    if (!pageResponse.ok) {
+      console.error('[process-source] Failed to fetch YouTube page:', pageResponse.status);
+      return '';
+    }
+
+    const html = await pageResponse.text();
+
+    // Extract captions data from the page
+    const captionsMatch = html.match(/"captions":\s*(\{.*?"playerCaptionsTracklistRenderer".*?\})\s*,\s*"videoDetails"/s);
+    if (!captionsMatch) {
+      console.log('[process-source] No captions found on YouTube page');
+      // Try alternative: timedtext API directly
+      return await fetchTimedTextDirect(videoId);
+    }
+
+    let captionsData: { playerCaptionsTracklistRenderer?: { captionTracks?: Array<{ baseUrl: string; languageCode: string }> } };
+    try {
+      captionsData = JSON.parse(captionsMatch[1]);
+    } catch {
+      console.error('[process-source] Failed to parse captions JSON');
+      return await fetchTimedTextDirect(videoId);
+    }
+
+    const tracks = captionsData?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!tracks || tracks.length === 0) {
+      console.log('[process-source] No caption tracks available');
+      return await fetchTimedTextDirect(videoId);
+    }
+
+    // Prefer English, fall back to first available
+    const enTrack = tracks.find(t => t.languageCode.startsWith('en')) || tracks[0];
+    console.log('[process-source] Using caption track:', enTrack.languageCode);
+
+    // Fetch the captions XML
+    const captionResponse = await fetch(enTrack.baseUrl);
+    if (!captionResponse.ok) {
+      console.error('[process-source] Failed to fetch captions XML:', captionResponse.status);
+      return '';
+    }
+
+    const xml = await captionResponse.text();
+    return parseTranscriptXml(xml);
+  } catch (error) {
+    console.error('[process-source] YouTube transcript extraction error:', error);
+    return '';
+  }
+}
+
+async function fetchTimedTextDirect(videoId: string): Promise<string> {
+  try {
+    const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`;
+    const res = await fetch(url);
+    if (!res.ok) return '';
+    const xml = await res.text();
+    return parseTranscriptXml(xml);
+  } catch {
+    return '';
+  }
+}
+
+function parseTranscriptXml(xml: string): string {
+  // Parse <text start="..." dur="...">content</text> elements
+  const textRegex = /<text\s+start="([\d.]+)"(?:\s+dur="([\d.]+)")?\s*>([\s\S]*?)<\/text>/g;
+  const segments: string[] = [];
+  let match;
+
+  while ((match = textRegex.exec(xml)) !== null) {
+    const startSeconds = parseFloat(match[1]);
+    const text = match[3]
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/<[^>]+>/g, '') // strip any HTML tags
+      .trim();
+
+    if (text) {
+      const timestamp = formatTimestamp(startSeconds);
+      segments.push(`<<<TIMESTAMP_${timestamp}>>>\n${text}`);
+    }
+  }
+
+  if (segments.length === 0) {
+    console.log('[process-source] No transcript segments parsed from XML');
+    return '';
+  }
+
+  console.log(`[process-source] Extracted ${segments.length} transcript segments`);
+  return segments.join('\n');
+}
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
