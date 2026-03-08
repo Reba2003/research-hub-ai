@@ -24,7 +24,8 @@ export async function extractPdfText(file: File): Promise<string> {
       .join(' ');
     
     if (pageText.trim()) {
-      pageTexts.push(pageText.trim());
+      // Insert page marker before each page's content
+      pageTexts.push(`<<<PAGE_${i}>>>\n${pageText.trim()}`);
     }
   }
   
