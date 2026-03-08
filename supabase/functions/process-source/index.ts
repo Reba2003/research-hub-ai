@@ -241,7 +241,7 @@ Deno.serve(async (req) => {
     }
     // Priority 3: YouTube – extract real transcript with timestamps
     else if (sourceData.type === 'youtube') {
-      rawContent = await extractYoutubeTranscript(sourceData.file_url || '', LOVABLE_API_KEY);
+      rawContent = await extractYoutubeTranscript(sourceData.file_url || '');
       if (!rawContent) {
         rawContent = `YouTube video: ${sourceData.file_url}. Transcript could not be extracted automatically.`;
       }
