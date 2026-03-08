@@ -167,10 +167,18 @@ Deno.serve(async (req) => {
     console.log(`[process-source] Storing ${chunks.length} chunks (${rawContent.length} total chars) for: ${sourceData.name}`);
 
     for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const pageLabel = chunk.pages.length > 0
+        ? (chunk.pages.length === 1
+          ? `p.${chunk.pages[0]}`
+          : `pp.${chunk.pages[0]}-${chunk.pages[chunk.pages.length - 1]}`)
+        : `Part ${i + 1}`;
+      // Strip page markers from stored content
+      const cleanContent = chunk.content.replace(/<<<PAGE_\d+>>>\n?/g, '');
       const { error: docError } = await supabase.from('documents').insert({
         source_id,
         user_id: user.id,
-        content: chunks[i],
+        content: cleanContent,
         metadata: {
           source_name: sourceData.name,
           source_type: sourceData.type,
@@ -178,7 +186,8 @@ Deno.serve(async (req) => {
           total_chunks: chunks.length,
           chunk_type: 'raw',
           processed_at: new Date().toISOString(),
-          location: `Part ${i + 1} of ${chunks.length}`,
+          location: pageLabel,
+          pages: chunk.pages,
         }
       });
       if (docError) console.error(`[process-source] Chunk ${i} error:`, docError);
