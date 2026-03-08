@@ -122,7 +122,7 @@ export function ChatMessage({ message }: ChatMessageProps) {
       id: s.id,
       name: s.name,
       type: s.type,
-      file_url: (s as unknown as { file_url?: string }).file_url,
+      file_url: s.file_url,
     }));
 
     return (
