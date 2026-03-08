@@ -15,19 +15,27 @@ interface SourceLibraryProps {
 }
 
 export function SourceLibrary({ className }: SourceLibraryProps) {
-  const { sources, addSource, removeSource, toggleSource, selectedCitation, updateSourceStatus } = useResearchStore();
+  const { sources, addSource, removeSource, toggleSource, selectedCitation, updateSourceStatus, activeConversationId } = useResearchStore();
   const [showUpload, setShowUpload] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
 
+  // Clear and reload sources when conversation changes
   useEffect(() => {
     const loadSources = async () => {
+      setIsLoading(true);
+      // Clear existing sources in store
+      const store = useResearchStore.getState();
+      store.sources.forEach(s => store.removeSource(s.id));
+
+      if (!activeConversationId) {
+        setIsLoading(false);
+        return;
+      }
+
       try {
-        const dbSources = await fetchSources();
-        const store = useResearchStore.getState();
+        const dbSources = await fetchSources(activeConversationId);
         dbSources.forEach((source) => {
-          if (!store.sources.find((s) => s.id === source.id)) {
-            store.addSource(source);
-          }
+          store.addSource(source);
         });
       } catch (error) {
         console.error('Failed to load sources:', error);
@@ -36,7 +44,7 @@ export function SourceLibrary({ className }: SourceLibraryProps) {
       }
     };
     loadSources();
-  }, []);
+  }, [activeConversationId]);
 
   useEffect(() => {
     const channel = supabase
