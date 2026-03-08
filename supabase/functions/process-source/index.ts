@@ -110,11 +110,21 @@ async function extractYoutubeTranscript(url: string): Promise<string> {
 }
 
 async function fetchViaInnerTube(videoId: string): Promise<string> {
-  // Step 1: Get video info to find caption tracks
-  const playerResponse = await fetch('https://www.youtube.com/youtubei/v1/player', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
+  // Try multiple client types - ANDROID is most reliable for captions
+  const clients = [
+    {
+      name: 'ANDROID',
+      context: {
+        client: {
+          clientName: 'ANDROID',
+          clientVersion: '19.09.37',
+          androidSdkVersion: 30,
+          hl: 'en',
+        },
+      },
+    },
+    {
+      name: 'WEB',
       context: {
         client: {
           clientName: 'WEB',
@@ -122,37 +132,63 @@ async function fetchViaInnerTube(videoId: string): Promise<string> {
           hl: 'en',
         },
       },
-      videoId,
-    }),
-  });
+    },
+  ];
 
-  if (!playerResponse.ok) {
-    console.error('[process-source] InnerTube player request failed:', playerResponse.status);
-    return '';
+  for (const clientConfig of clients) {
+    try {
+      console.log(`[process-source] Trying InnerTube with ${clientConfig.name} client`);
+      const playerResponse = await fetch('https://www.youtube.com/youtubei/v1/player?prettyPrint=false', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'User-Agent': 'com.google.android.youtube/19.09.37 (Linux; U; Android 11) gzip',
+        },
+        body: JSON.stringify({
+          context: clientConfig.context,
+          videoId,
+        }),
+      });
+
+      if (!playerResponse.ok) {
+        console.error(`[process-source] InnerTube ${clientConfig.name} failed:`, playerResponse.status);
+        continue;
+      }
+
+      const playerData = await playerResponse.json();
+      
+      // Log available keys for debugging
+      const hasPlayability = !!playerData?.playabilityStatus;
+      const hasCaptions = !!playerData?.captions;
+      console.log(`[process-source] InnerTube ${clientConfig.name} response: playability=${hasPlayability}, captions=${hasCaptions}, status=${playerData?.playabilityStatus?.status}`);
+
+      const tracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+
+      if (!tracks || tracks.length === 0) {
+        console.log(`[process-source] No caption tracks from ${clientConfig.name}`);
+        continue;
+      }
+
+      // Prefer English, fall back to first
+      const track = tracks.find((t: { languageCode: string }) => t.languageCode.startsWith('en')) || tracks[0];
+      console.log('[process-source] Using caption track:', track.languageCode);
+
+      const captionUrl = track.baseUrl + '&fmt=srv3';
+      const captionRes = await fetch(captionUrl);
+      if (!captionRes.ok) {
+        console.error('[process-source] Failed to fetch caption XML:', captionRes.status);
+        continue;
+      }
+
+      const xml = await captionRes.text();
+      const result = parseTranscriptXml(xml);
+      if (result) return result;
+    } catch (err) {
+      console.error(`[process-source] InnerTube ${clientConfig.name} error:`, err);
+    }
   }
 
-  const playerData = await playerResponse.json();
-  const tracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-  
-  if (!tracks || tracks.length === 0) {
-    console.log('[process-source] No caption tracks found via InnerTube');
-    return '';
-  }
-
-  // Prefer English, fall back to first
-  const track = tracks.find((t: { languageCode: string }) => t.languageCode.startsWith('en')) || tracks[0];
-  console.log('[process-source] Using caption track:', track.languageCode, 'from InnerTube');
-
-  // Fetch the actual transcript XML
-  const captionUrl = track.baseUrl + '&fmt=srv3';
-  const captionRes = await fetch(captionUrl);
-  if (!captionRes.ok) {
-    console.error('[process-source] Failed to fetch caption XML:', captionRes.status);
-    return '';
-  }
-
-  const xml = await captionRes.text();
-  return parseTranscriptXml(xml);
+  return '';
 }
 
 async function fetchTimedTextDirect(videoId: string): Promise<string> {
