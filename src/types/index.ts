@@ -13,6 +13,7 @@ export interface Source {
   duration?: number;
   pageCount?: number;
   thumbnailUrl?: string;
+  file_url?: string;
 }
 
 export interface Citation {
