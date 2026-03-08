@@ -50,9 +50,16 @@ export function SourceLibrary({ className }: SourceLibraryProps) {
     const channel = supabase
       .channel('sources-status')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'sources' }, (payload) => {
-        const updatedSource = payload.new as { id: string; status: string };
+        const updatedSource = payload.new as { id: string; status: string; name?: string };
         if (updatedSource.status) {
           updateSourceStatus(updatedSource.id, updatedSource.status as Source['status']);
+        }
+        if (updatedSource.name) {
+          const store = useResearchStore.getState();
+          const existing = store.sources.find(s => s.id === updatedSource.id);
+          if (existing && existing.name !== updatedSource.name) {
+            store.updateSourceName(updatedSource.id, updatedSource.name);
+          }
         }
       })
       .subscribe();

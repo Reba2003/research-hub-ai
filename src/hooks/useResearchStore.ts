@@ -8,6 +8,7 @@ interface ResearchStore {
   removeSource: (id: string) => void;
   toggleSource: (id: string) => void;
   updateSourceStatus: (id: string, status: Source['status']) => void;
+  updateSourceName: (id: string, name: string) => void;
   clearSources: () => void;
 
   // Chat
