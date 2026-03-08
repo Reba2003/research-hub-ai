@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Bot, User } from 'lucide-react';
 import { CitationChip } from './CitationChip';
 import { useResearchStore } from '@/hooks/useResearchStore';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import type { ChatMessage as ChatMessageType } from '@/types';
 
 interface ChatMessageProps {
@@ -83,29 +84,44 @@ function RichContent({ content, sources }: { content: string; sources: { id: str
           }
         }
 
+        const topicLabel = part.label.replace(/,?\s*@[\d:]+$/, '').trim() || 'Cited section';
+
         if (youtubeUrl) {
           return (
-            <a
-              key={i}
-              href={youtubeUrl}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="inline-flex items-center gap-0.5 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary transition-all hover:border-primary/50 hover:bg-primary/20 cursor-pointer no-underline"
-              title={`Open video at ${part.timestamp}`}
-            >
-              ▶ {part.timestamp}
-            </a>
+            <TooltipProvider key={i} delayDuration={200}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <a
+                    href={youtubeUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="inline-flex items-center gap-0.5 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary transition-all hover:border-primary/50 hover:bg-primary/20 cursor-pointer no-underline"
+                  >
+                    ▶ {part.timestamp}
+                  </a>
+                </TooltipTrigger>
+                <TooltipContent side="top" className="max-w-[240px] text-xs">
+                  <p className="font-medium">{topicLabel}</p>
+                  <p className="text-muted-foreground">Click to open at {part.timestamp}</p>
+                </TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           );
         }
 
-        // Non-YouTube timestamp - render as styled span
         return (
-          <span
-            key={i}
-            className="inline-flex items-center gap-0.5 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary"
-          >
-            [{part.label}]
-          </span>
+          <TooltipProvider key={i} delayDuration={200}>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-0.5 rounded-md border border-primary/30 bg-primary/10 px-1.5 py-0.5 text-xs font-medium text-primary cursor-default">
+                  [{part.label}]
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" className="max-w-[240px] text-xs">
+                <p className="font-medium">{topicLabel}</p>
+              </TooltipContent>
+            </Tooltip>
+          </TooltipProvider>
         );
       })}
     </p>
