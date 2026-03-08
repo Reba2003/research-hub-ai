@@ -87,51 +87,50 @@ async function extractYoutubeTranscript(url: string): Promise<string> {
     return '';
   }
 
-  const SUPADATA_API_KEY = Deno.env.get('SUPADATA_API_KEY');
-  if (!SUPADATA_API_KEY) {
-    console.error('[process-source] SUPADATA_API_KEY not configured');
+  const API_KEY = Deno.env.get('TRANSCRIPTAPI_KEY');
+  if (!API_KEY) {
+    console.error('[process-source] TRANSCRIPTAPI_KEY not configured');
     return '';
   }
 
-  console.log('[process-source] Fetching transcript via Supadata for:', videoId);
+  console.log('[process-source] Fetching transcript via TranscriptAPI for:', videoId);
 
   try {
     const response = await fetch(
-      `https://api.supadata.ai/v1/transcript?url=https://www.youtube.com/watch?v=${videoId}`,
+      `https://transcriptapi.com/api/v2/youtube/transcript?video_url=${videoId}&format=json`,
       {
-        headers: { 'x-api-key': SUPADATA_API_KEY },
+        headers: { 'Authorization': `Bearer ${API_KEY}` },
       }
     );
 
     if (!response.ok) {
-      console.error('[process-source] Supadata API failed:', response.status, await response.text());
+      console.error('[process-source] TranscriptAPI failed:', response.status, await response.text());
       return '';
     }
 
     const data = await response.json();
-    const content = data.content as Array<{ text: string; offset: number; duration: number }> | undefined;
+    const segments = data.segments as Array<{ start: number; end?: number; text: string }> | undefined;
 
-    if (!content || content.length === 0) {
-      console.log('[process-source] Supadata returned no transcript content');
+    if (!segments || segments.length === 0) {
+      console.log('[process-source] TranscriptAPI returned no segments');
       return '';
     }
 
-    console.log(`[process-source] Supadata returned ${content.length} transcript segments`);
+    console.log(`[process-source] TranscriptAPI returned ${segments.length} segments`);
 
     // Convert to our timestamped marker format
-    const segments: string[] = [];
-    for (const item of content) {
-      const totalSeconds = Math.floor(item.offset / 1000);
-      const timestamp = formatTimestamp(totalSeconds);
-      if (item.text.trim()) {
-        segments.push(`<<<TIMESTAMP_${timestamp}>>>\n${item.text.trim()}`);
+    const result: string[] = [];
+    for (const seg of segments) {
+      const timestamp = formatTimestamp(Math.floor(seg.start));
+      if (seg.text.trim()) {
+        result.push(`<<<TIMESTAMP_${timestamp}>>>\n${seg.text.trim()}`);
       }
     }
 
-    console.log(`[process-source] Formatted ${segments.length} timestamped segments`);
-    return segments.join('\n');
+    console.log(`[process-source] Formatted ${result.length} timestamped segments`);
+    return result.join('\n');
   } catch (error) {
-    console.error('[process-source] Supadata transcript error:', error);
+    console.error('[process-source] TranscriptAPI error:', error);
     return '';
   }
 }
