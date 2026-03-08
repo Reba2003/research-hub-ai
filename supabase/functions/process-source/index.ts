@@ -15,22 +15,36 @@ interface SourceData {
   user_id: string;
 }
 
-function chunkText(text: string, maxChars = 4000): string[] {
-  if (text.length <= maxChars) return [text];
-  const chunks: string[] = [];
+function chunkText(text: string, maxChars = 4000): Array<{ content: string; pages: number[] }> {
+  if (text.length <= maxChars) {
+    const pages = extractPageNumbers(text);
+    return [{ content: text, pages }];
+  }
+  const chunks: Array<{ content: string; pages: number[] }> = [];
   let remaining = text;
   while (remaining.length > 0) {
     if (remaining.length <= maxChars) {
-      chunks.push(remaining);
+      chunks.push({ content: remaining, pages: extractPageNumbers(remaining) });
       break;
     }
     let breakPoint = remaining.lastIndexOf('. ', maxChars);
     if (breakPoint < maxChars * 0.5) breakPoint = remaining.lastIndexOf('\n', maxChars);
     if (breakPoint < maxChars * 0.3) breakPoint = maxChars;
-    chunks.push(remaining.slice(0, breakPoint + 1).trim());
+    const chunkContent = remaining.slice(0, breakPoint + 1).trim();
+    chunks.push({ content: chunkContent, pages: extractPageNumbers(chunkContent) });
     remaining = remaining.slice(breakPoint + 1).trim();
   }
   return chunks;
+}
+
+function extractPageNumbers(text: string): number[] {
+  const pageMarkerRegex = /<<<PAGE_(\d+)>>>/g;
+  const pages: number[] = [];
+  let match;
+  while ((match = pageMarkerRegex.exec(text)) !== null) {
+    pages.push(parseInt(match[1], 10));
+  }
+  return pages;
 }
 
 Deno.serve(async (req) => {
@@ -153,10 +167,18 @@ Deno.serve(async (req) => {
     console.log(`[process-source] Storing ${chunks.length} chunks (${rawContent.length} total chars) for: ${sourceData.name}`);
 
     for (let i = 0; i < chunks.length; i++) {
+      const chunk = chunks[i];
+      const pageLabel = chunk.pages.length > 0
+        ? (chunk.pages.length === 1
+          ? `p.${chunk.pages[0]}`
+          : `pp.${chunk.pages[0]}-${chunk.pages[chunk.pages.length - 1]}`)
+        : `Part ${i + 1}`;
+      // Strip page markers from stored content
+      const cleanContent = chunk.content.replace(/<<<PAGE_\d+>>>\n?/g, '');
       const { error: docError } = await supabase.from('documents').insert({
         source_id,
         user_id: user.id,
-        content: chunks[i],
+        content: cleanContent,
         metadata: {
           source_name: sourceData.name,
           source_type: sourceData.type,
@@ -164,7 +186,8 @@ Deno.serve(async (req) => {
           total_chunks: chunks.length,
           chunk_type: 'raw',
           processed_at: new Date().toISOString(),
-          location: `Part ${i + 1} of ${chunks.length}`,
+          location: pageLabel,
+          pages: chunk.pages,
         }
       });
       if (docError) console.error(`[process-source] Chunk ${i} error:`, docError);
