@@ -76,7 +76,7 @@ function RichContent({ content, sources }: { content: string; sources: { id: str
         let youtubeUrl: string | null = null;
         if (youtubeSource) {
           // Extract video ID from the source's file_url
-          const fileUrl = (youtubeSource as unknown as { file_url?: string }).file_url || '';
+          const fileUrl = youtubeSource.file_url || '';
           const vidMatch = fileUrl.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/)([a-zA-Z0-9_-]{11})/);
           if (vidMatch) {
             youtubeUrl = `https://www.youtube.com/watch?v=${vidMatch[1]}&t=${seconds}s`;
