@@ -127,7 +127,12 @@ Deno.serve(async (req) => {
         for (const doc of documents) {
           const meta = doc.metadata as Record<string, unknown> || {};
           const chunkType = meta.chunk_type === 'summary' ? ' (Summary)' : '';
-          const chunk = `[Source ${chunks.length + 1} - ${meta.source_name || 'Unknown'}${chunkType}]: ${doc.content}`;
+          const chunkIndex = typeof meta.chunk_index === 'number' ? meta.chunk_index : chunks.length;
+          // Estimate page number: ~4000 chars per chunk, ~2500 chars per page
+          const estPage = Math.floor(chunkIndex * 4000 / 2500) + 1;
+          const pageInfo = meta.source_type === 'pdf' ? `, ~p.${estPage}` : '';
+          const locationInfo = meta.location ? ` (${meta.location}${pageInfo})` : '';
+          const chunk = `[Source ${chunks.length + 1} - ${meta.source_name || 'Unknown'}${chunkType}${locationInfo}]: ${doc.content}`;
           if (totalChars + chunk.length > config.maxChars) {
             console.log(`Context truncated at ${totalChars} chars (limit: ${config.maxChars}) after ${chunks.length} chunks`);
             break;
@@ -146,10 +151,11 @@ Deno.serve(async (req) => {
 When answering questions:
 1. Reference specific parts of the sources when possible
 2. Provide clear, well-structured answers using the FULL content available
-3. Use citations in the format [Source N] when referencing material
-4. Be thorough and detailed - use all the information from the sources
-5. If you cannot find relevant information in the sources, say so honestly
-6. If an image is provided, analyze it thoroughly and relate it to the source materials when relevant
+3. Use citations that include the source name AND page number when available, e.g. [Source Name, p.42] or [Source Name, pp.42-45]
+4. For PDF sources, always include page numbers in citations based on the ~p.N info provided in the source labels
+5. Be thorough and detailed - use all the information from the sources
+6. If you cannot find relevant information in the sources, say so honestly
+7. If an image is provided, analyze it thoroughly and relate it to the source materials when relevant
 
 ${sourceContext}`;
     console.log(`Using model: ${config.name} (provider: ${model_provider}, hasImage: ${has_image})`);
