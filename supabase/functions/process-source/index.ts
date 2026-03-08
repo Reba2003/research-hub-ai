@@ -135,41 +135,7 @@ async function extractYoutubeTranscript(url: string): Promise<string> {
     return '';
   }
 }
-    return '';
-  }
-}
 
-function parseTranscriptXml(xml: string): string {
-  // Parse <text start="..." dur="...">content</text> elements
-  const textRegex = /<text\s+start="([\d.]+)"(?:\s+dur="([\d.]+)")?\s*>([\s\S]*?)<\/text>/g;
-  const segments: string[] = [];
-  let match;
-
-  while ((match = textRegex.exec(xml)) !== null) {
-    const startSeconds = parseFloat(match[1]);
-    const text = match[3]
-      .replace(/&amp;/g, '&')
-      .replace(/&lt;/g, '<')
-      .replace(/&gt;/g, '>')
-      .replace(/&quot;/g, '"')
-      .replace(/&#39;/g, "'")
-      .replace(/<[^>]+>/g, '') // strip any HTML tags
-      .trim();
-
-    if (text) {
-      const timestamp = formatTimestamp(startSeconds);
-      segments.push(`<<<TIMESTAMP_${timestamp}>>>\n${text}`);
-    }
-  }
-
-  if (segments.length === 0) {
-    console.log('[process-source] No transcript segments parsed from XML');
-    return '';
-  }
-
-  console.log(`[process-source] Extracted ${segments.length} transcript segments`);
-  return segments.join('\n');
-}
 
 Deno.serve(async (req) => {
   if (req.method === 'OPTIONS') {
