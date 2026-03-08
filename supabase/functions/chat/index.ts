@@ -22,8 +22,9 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
     return {
       url: 'https://openrouter.ai/api/v1/chat/completions',
       key,
-      model: 'google/gemini-2.5-flash-preview:thinking',
+      model: 'google/gemini-2.5-flash-preview',
       name: 'Gemini Flash (Vision via OpenRouter)',
+      maxChars: 800000,
     };
   }
 
@@ -36,6 +37,7 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
         key,
         model: 'openai/gpt-4o',
         name: 'GPT-4o (OpenRouter)',
+        maxChars: 400000,
       };
     }
     case 'deepseek': {
@@ -46,6 +48,7 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
         key,
         model: 'deepseek/deepseek-chat-v3-0324',
         name: 'DeepSeek Chat (OpenRouter)',
+        maxChars: 500000,
       };
     }
     case 'gemini': {
@@ -54,13 +57,13 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
       return {
         url: 'https://openrouter.ai/api/v1/chat/completions',
         key,
-        model: 'google/gemini-2.5-flash-preview:thinking',
+        model: 'google/gemini-2.5-flash-preview',
         name: 'Gemini Flash (OpenRouter)',
+        maxChars: 800000,
       };
     }
     case 'auto':
     default: {
-      // Default: use Lovable AI gateway
       const key = Deno.env.get('LOVABLE_API_KEY');
       if (!key) throw new Error('LOVABLE_API_KEY not configured');
       return {
@@ -68,6 +71,7 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
         key,
         model: 'google/gemini-2.5-flash',
         name: 'Auto (Lovable AI)',
+        maxChars: 800000,
       };
     }
   }
