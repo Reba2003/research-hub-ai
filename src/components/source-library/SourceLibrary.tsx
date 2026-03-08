@@ -104,7 +104,7 @@ export function SourceLibrary({ className }: SourceLibraryProps) {
       {/* Upload zone (collapsible) */}
       {showUpload && (
         <div className="border-b border-border p-3">
-          <UploadZone onUpload={handleUpload} />
+          <UploadZone onUpload={handleUpload} conversationId={activeConversationId} />
         </div>
       )}
 
