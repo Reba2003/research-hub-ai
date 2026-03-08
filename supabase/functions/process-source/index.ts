@@ -89,73 +89,81 @@ async function extractYoutubeTranscript(url: string): Promise<string> {
 
   console.log('[process-source] Fetching YouTube transcript for video:', videoId);
 
+  // Method 1: Use YouTube InnerTube API (most reliable from server-side)
   try {
-    // Fetch the YouTube video page to find caption tracks
-    const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-      },
-    });
-
-    if (!pageResponse.ok) {
-      console.error('[process-source] Failed to fetch YouTube page:', pageResponse.status);
-      return '';
-    }
-
-    const html = await pageResponse.text();
-
-    // Extract captions data from the page
-    const captionsMatch = html.match(/"captions":\s*(\{.*?"playerCaptionsTracklistRenderer".*?\})\s*,\s*"videoDetails"/s);
-    if (!captionsMatch) {
-      console.log('[process-source] No captions found on YouTube page');
-      // Try alternative: timedtext API directly
-      return await fetchTimedTextDirect(videoId);
-    }
-
-    let captionsData: { playerCaptionsTracklistRenderer?: { captionTracks?: Array<{ baseUrl: string; languageCode: string }> } };
-    try {
-      captionsData = JSON.parse(captionsMatch[1]);
-    } catch {
-      console.error('[process-source] Failed to parse captions JSON');
-      return await fetchTimedTextDirect(videoId);
-    }
-
-    const tracks = captionsData?.playerCaptionsTracklistRenderer?.captionTracks;
-    if (!tracks || tracks.length === 0) {
-      console.log('[process-source] No caption tracks available');
-      return await fetchTimedTextDirect(videoId);
-    }
-
-    // Prefer English, fall back to first available
-    const enTrack = tracks.find(t => t.languageCode.startsWith('en')) || tracks[0];
-    console.log('[process-source] Using caption track:', enTrack.languageCode);
-
-    // Fetch the captions XML
-    const captionResponse = await fetch(enTrack.baseUrl);
-    if (!captionResponse.ok) {
-      console.error('[process-source] Failed to fetch captions XML:', captionResponse.status);
-      return '';
-    }
-
-    const xml = await captionResponse.text();
-    return parseTranscriptXml(xml);
+    const transcript = await fetchViaInnerTube(videoId);
+    if (transcript) return transcript;
   } catch (error) {
-    console.error('[process-source] YouTube transcript extraction error:', error);
+    console.error('[process-source] InnerTube method failed:', error);
+  }
+
+  // Method 2: Direct timedtext API
+  try {
+    const transcript = await fetchTimedTextDirect(videoId);
+    if (transcript) return transcript;
+  } catch (error) {
+    console.error('[process-source] TimedText method failed:', error);
+  }
+
+  console.log('[process-source] All transcript extraction methods failed for:', videoId);
+  return '';
+}
+
+async function fetchViaInnerTube(videoId: string): Promise<string> {
+  // Step 1: Get video info to find caption tracks
+  const playerResponse = await fetch('https://www.youtube.com/youtubei/v1/player', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      context: {
+        client: {
+          clientName: 'WEB',
+          clientVersion: '2.20240101.00.00',
+          hl: 'en',
+        },
+      },
+      videoId,
+    }),
+  });
+
+  if (!playerResponse.ok) {
+    console.error('[process-source] InnerTube player request failed:', playerResponse.status);
     return '';
   }
+
+  const playerData = await playerResponse.json();
+  const tracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
+  
+  if (!tracks || tracks.length === 0) {
+    console.log('[process-source] No caption tracks found via InnerTube');
+    return '';
+  }
+
+  // Prefer English, fall back to first
+  const track = tracks.find((t: { languageCode: string }) => t.languageCode.startsWith('en')) || tracks[0];
+  console.log('[process-source] Using caption track:', track.languageCode, 'from InnerTube');
+
+  // Fetch the actual transcript XML
+  const captionUrl = track.baseUrl + '&fmt=srv3';
+  const captionRes = await fetch(captionUrl);
+  if (!captionRes.ok) {
+    console.error('[process-source] Failed to fetch caption XML:', captionRes.status);
+    return '';
+  }
+
+  const xml = await captionRes.text();
+  return parseTranscriptXml(xml);
 }
 
 async function fetchTimedTextDirect(videoId: string): Promise<string> {
-  try {
-    const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`;
-    const res = await fetch(url);
-    if (!res.ok) return '';
-    const xml = await res.text();
-    return parseTranscriptXml(xml);
-  } catch {
+  const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`;
+  const res = await fetch(url);
+  if (!res.ok) {
+    console.log('[process-source] Direct timedtext failed:', res.status);
     return '';
   }
+  const xml = await res.text();
+  return parseTranscriptXml(xml);
 }
 
 function parseTranscriptXml(xml: string): string {
