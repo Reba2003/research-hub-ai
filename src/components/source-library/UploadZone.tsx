@@ -135,6 +135,7 @@ export function UploadZone({ onUpload, conversationId }: UploadZoneProps) {
           type: 'youtube',
           file_url: youtubeUrl,
           metadata: { videoId },
+          conversation_id: conversationId || undefined,
         });
 
         if (source) {
