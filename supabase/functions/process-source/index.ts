@@ -47,7 +47,138 @@ function extractPageNumbers(text: string): number[] {
   return pages;
 }
 
-Deno.serve(async (req) => {
+function extractTimestamps(text: string): string[] {
+  const tsRegex = /<<<TIMESTAMP_([\d:]+)>>>/g;
+  const timestamps: string[] = [];
+  let match;
+  while ((match = tsRegex.exec(text)) !== null) {
+    timestamps.push(match[1]);
+  }
+  return timestamps;
+}
+
+function formatTimestamp(seconds: number): string {
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  const s = Math.floor(seconds % 60);
+  if (h > 0) return `${h}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  return `${m}:${String(s).padStart(2, '0')}`;
+}
+
+function extractVideoId(url: string): string | null {
+  const match = url.match(/(?:youtube\.com\/watch\?v=|youtu\.be\/|youtube\.com\/embed\/)([a-zA-Z0-9_-]{11})/);
+  return match ? match[1] : null;
+}
+
+async function extractYoutubeTranscript(url: string): Promise<string> {
+  const videoId = extractVideoId(url);
+  if (!videoId) {
+    console.error('[process-source] Could not extract YouTube video ID from:', url);
+    return '';
+  }
+
+  console.log('[process-source] Fetching YouTube transcript for video:', videoId);
+
+  try {
+    // Fetch the YouTube video page to find caption tracks
+    const pageResponse = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Language': 'en-US,en;q=0.9',
+      },
+    });
+
+    if (!pageResponse.ok) {
+      console.error('[process-source] Failed to fetch YouTube page:', pageResponse.status);
+      return '';
+    }
+
+    const html = await pageResponse.text();
+
+    // Extract captions data from the page
+    const captionsMatch = html.match(/"captions":\s*(\{.*?"playerCaptionsTracklistRenderer".*?\})\s*,\s*"videoDetails"/s);
+    if (!captionsMatch) {
+      console.log('[process-source] No captions found on YouTube page');
+      // Try alternative: timedtext API directly
+      return await fetchTimedTextDirect(videoId);
+    }
+
+    let captionsData: { playerCaptionsTracklistRenderer?: { captionTracks?: Array<{ baseUrl: string; languageCode: string }> } };
+    try {
+      captionsData = JSON.parse(captionsMatch[1]);
+    } catch {
+      console.error('[process-source] Failed to parse captions JSON');
+      return await fetchTimedTextDirect(videoId);
+    }
+
+    const tracks = captionsData?.playerCaptionsTracklistRenderer?.captionTracks;
+    if (!tracks || tracks.length === 0) {
+      console.log('[process-source] No caption tracks available');
+      return await fetchTimedTextDirect(videoId);
+    }
+
+    // Prefer English, fall back to first available
+    const enTrack = tracks.find(t => t.languageCode.startsWith('en')) || tracks[0];
+    console.log('[process-source] Using caption track:', enTrack.languageCode);
+
+    // Fetch the captions XML
+    const captionResponse = await fetch(enTrack.baseUrl);
+    if (!captionResponse.ok) {
+      console.error('[process-source] Failed to fetch captions XML:', captionResponse.status);
+      return '';
+    }
+
+    const xml = await captionResponse.text();
+    return parseTranscriptXml(xml);
+  } catch (error) {
+    console.error('[process-source] YouTube transcript extraction error:', error);
+    return '';
+  }
+}
+
+async function fetchTimedTextDirect(videoId: string): Promise<string> {
+  try {
+    const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`;
+    const res = await fetch(url);
+    if (!res.ok) return '';
+    const xml = await res.text();
+    return parseTranscriptXml(xml);
+  } catch {
+    return '';
+  }
+}
+
+function parseTranscriptXml(xml: string): string {
+  // Parse <text start="..." dur="...">content</text> elements
+  const textRegex = /<text\s+start="([\d.]+)"(?:\s+dur="([\d.]+)")?\s*>([\s\S]*?)<\/text>/g;
+  const segments: string[] = [];
+  let match;
+
+  while ((match = textRegex.exec(xml)) !== null) {
+    const startSeconds = parseFloat(match[1]);
+    const text = match[3]
+      .replace(/&amp;/g, '&')
+      .replace(/&lt;/g, '<')
+      .replace(/&gt;/g, '>')
+      .replace(/&quot;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/<[^>]+>/g, '') // strip any HTML tags
+      .trim();
+
+    if (text) {
+      const timestamp = formatTimestamp(startSeconds);
+      segments.push(`<<<TIMESTAMP_${timestamp}>>>\n${text}`);
+    }
+  }
+
+  if (segments.length === 0) {
+    console.log('[process-source] No transcript segments parsed from XML');
+    return '';
+  }
+
+  console.log(`[process-source] Extracted ${segments.length} transcript segments`);
+  return segments.join('\n');
+}
   if (req.method === 'OPTIONS') {
     return new Response(null, { headers: corsHeaders });
   }
@@ -115,9 +246,12 @@ Deno.serve(async (req) => {
     else if (sourceData.type === 'text') {
       rawContent = (sourceData.metadata?.content as string) || '';
     }
-    // Priority 3: YouTube
+    // Priority 3: YouTube – extract real transcript with timestamps
     else if (sourceData.type === 'youtube') {
-      rawContent = `YouTube video: ${sourceData.file_url}. This video needs to be analyzed.`;
+      rawContent = await extractYoutubeTranscript(sourceData.file_url || '');
+      if (!rawContent) {
+        rawContent = `YouTube video: ${sourceData.file_url}. Transcript could not be extracted automatically.`;
+      }
     }
     // Priority 4: Download text files from storage
     else if (sourceData.file_path) {
@@ -168,13 +302,25 @@ Deno.serve(async (req) => {
 
     for (let i = 0; i < chunks.length; i++) {
       const chunk = chunks[i];
-      const pageLabel = chunk.pages.length > 0
-        ? (chunk.pages.length === 1
+      const timestamps = extractTimestamps(chunk.content);
+      
+      let locationLabel: string;
+      if (chunk.pages.length > 0) {
+        locationLabel = chunk.pages.length === 1
           ? `p.${chunk.pages[0]}`
-          : `pp.${chunk.pages[0]}-${chunk.pages[chunk.pages.length - 1]}`)
-        : `Part ${i + 1}`;
-      // Strip page markers from stored content
-      const cleanContent = chunk.content.replace(/<<<PAGE_\d+>>>\n?/g, '');
+          : `pp.${chunk.pages[0]}-${chunk.pages[chunk.pages.length - 1]}`;
+      } else if (timestamps.length > 0) {
+        locationLabel = timestamps.length === 1
+          ? timestamps[0]
+          : `${timestamps[0]}-${timestamps[timestamps.length - 1]}`;
+      } else {
+        locationLabel = `Part ${i + 1}`;
+      }
+      
+      // Strip page and timestamp markers from stored content
+      const cleanContent = chunk.content
+        .replace(/<<<PAGE_\d+>>>\n?/g, '')
+        .replace(/<<<TIMESTAMP_[\d:]+>>>\n?/g, '');
       const { error: docError } = await supabase.from('documents').insert({
         source_id,
         user_id: user.id,
@@ -186,8 +332,9 @@ Deno.serve(async (req) => {
           total_chunks: chunks.length,
           chunk_type: 'raw',
           processed_at: new Date().toISOString(),
-          location: pageLabel,
+          location: locationLabel,
           pages: chunk.pages,
+          timestamps: timestamps,
         }
       });
       if (docError) console.error(`[process-source] Chunk ${i} error:`, docError);
