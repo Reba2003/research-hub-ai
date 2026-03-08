@@ -22,7 +22,7 @@ function getProviderConfig(provider: ModelProvider, hasImage: boolean) {
     return {
       url: 'https://openrouter.ai/api/v1/chat/completions',
       key,
-      model: 'google/gemini-2.5-flash-preview',
+      model: 'google/gemini-2.5-flash-preview-09-2025',
       name: 'Gemini Flash (Vision via OpenRouter)',
       maxChars: 800000,
     };
