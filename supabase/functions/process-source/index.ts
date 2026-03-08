@@ -109,115 +109,97 @@ async function extractYoutubeTranscript(url: string): Promise<string> {
   return '';
 }
 
-async function fetchViaInnerTube(videoId: string): Promise<string> {
+async function extractYoutubeTranscript(url: string, apiKey: string): Promise<string> {
+  const videoId = extractVideoId(url);
+  if (!videoId) {
+    console.error('[process-source] Could not extract YouTube video ID from:', url);
+    return '';
+  }
+
+  console.log('[process-source] Using Gemini to extract YouTube transcript for:', videoId);
+
   try {
-    // Step 1: Fetch the video page to get INNERTUBE_API_KEY
-    console.log('[process-source] Fetching YouTube page to get API key...');
-    const pageRes = await fetch(`https://www.youtube.com/watch?v=${videoId}`, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Accept': 'text/html,application/xhtml+xml',
-      },
-    });
-
-    if (!pageRes.ok) {
-      console.error('[process-source] YouTube page fetch failed:', pageRes.status);
-      return '';
-    }
-
-    const html = await pageRes.text();
-    
-    // Extract INNERTUBE_API_KEY
-    const apiKeyMatch = html.match(/"INNERTUBE_API_KEY":"([^"]+)"/);
-    if (!apiKeyMatch) {
-      console.error('[process-source] INNERTUBE_API_KEY not found in page');
-      return '';
-    }
-    const apiKey = apiKeyMatch[1];
-    console.log('[process-source] Got INNERTUBE_API_KEY:', apiKey);
-
-    // Step 2: Use the player endpoint with the API key
-    const playerRes = await fetch(`https://www.youtube.com/youtubei/v1/player?key=${apiKey}&prettyPrint=false`, {
+    // Use Gemini via Lovable AI gateway — Gemini can natively process YouTube URLs
+    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
       method: 'POST',
       headers: {
+        Authorization: `Bearer ${apiKey}`,
         'Content-Type': 'application/json',
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36',
       },
       body: JSON.stringify({
-        context: {
-          client: {
-            clientName: 'WEB',
-            clientVersion: '2.20240101.00.00',
-            hl: 'en',
+        model: 'google/gemini-2.5-flash',
+        messages: [
+          {
+            role: 'system',
+            content: `You are a transcript extraction assistant. Extract the COMPLETE spoken transcript from the YouTube video. 
+Format the output as timestamped segments like this:
+[0:00] First spoken words here...
+[0:15] Next segment of speech...
+[1:02] Continue with more speech...
+
+Rules:
+- Include ALL spoken content, do not summarize or skip anything
+- Use [M:SS] or [H:MM:SS] timestamp format
+- Start a new timestamped segment every 15-30 seconds approximately
+- If there are multiple speakers, note speaker changes
+- Capture the complete content faithfully, word for word when possible
+- Do NOT add any commentary, headers, or explanations - just the timestamped transcript`,
           },
-        },
-        videoId,
+          {
+            role: 'user',
+            content: `Extract the complete timestamped transcript from this YouTube video: https://www.youtube.com/watch?v=${videoId}`,
+          },
+        ],
       }),
     });
 
-    if (!playerRes.ok) {
-      console.error('[process-source] InnerTube player failed:', playerRes.status);
+    if (!response.ok) {
+      console.error('[process-source] Gemini transcript extraction failed:', response.status);
+      const errorText = await response.text();
+      console.error('[process-source] Error details:', errorText);
       return '';
     }
 
-    const playerData = await playerRes.json();
-    console.log(`[process-source] Player response: status=${playerData?.playabilityStatus?.status}, hasCaptions=${!!playerData?.captions}`);
+    const result = await response.json();
+    const transcript = result.choices?.[0]?.message?.content || '';
 
-    const tracks = playerData?.captions?.playerCaptionsTracklistRenderer?.captionTracks;
-    if (!tracks || tracks.length === 0) {
-      // Try extracting captions directly from page HTML as fallback
-      console.log('[process-source] No tracks from player API, trying page HTML extraction...');
-      return extractCaptionsFromHtml(html);
-    }
-
-    const track = tracks.find((t: { languageCode: string }) => t.languageCode.startsWith('en')) || tracks[0];
-    console.log('[process-source] Using caption track:', track.languageCode);
-
-    const captionRes = await fetch(track.baseUrl + '&fmt=srv3');
-    if (!captionRes.ok) {
-      console.error('[process-source] Caption XML fetch failed:', captionRes.status);
+    if (!transcript || transcript.length < 50) {
+      console.log('[process-source] Gemini returned insufficient transcript content');
       return '';
     }
 
-    return parseTranscriptXml(await captionRes.text());
-  } catch (err) {
-    console.error('[process-source] InnerTube error:', err);
+    console.log(`[process-source] Gemini extracted transcript: ${transcript.length} chars`);
+
+    // Convert [M:SS] format to our <<<TIMESTAMP_M:SS>>> marker format
+    const lines = transcript.split('\n');
+    const segments: string[] = [];
+    
+    for (const line of lines) {
+      const tsMatch = line.match(/^\[(\d+:\d{2}(?::\d{2})?)\]\s*(.*)/);
+      if (tsMatch) {
+        const timestamp = tsMatch[1];
+        const text = tsMatch[2].trim();
+        if (text) {
+          segments.push(`<<<TIMESTAMP_${timestamp}>>>\n${text}`);
+        }
+      } else if (line.trim()) {
+        // Append non-timestamped lines to previous segment
+        segments.push(line.trim());
+      }
+    }
+
+    if (segments.length === 0) {
+      // Fall back to raw transcript without markers
+      console.log('[process-source] Could not parse timestamps, using raw transcript');
+      return transcript;
+    }
+
+    console.log(`[process-source] Parsed ${segments.length} transcript segments with timestamps`);
+    return segments.join('\n');
+  } catch (error) {
+    console.error('[process-source] YouTube transcript extraction error:', error);
     return '';
   }
-}
-
-function extractCaptionsFromHtml(html: string): string {
-  // Try to find caption track URLs directly in the page HTML
-  const captionMatch = html.match(/"captionTracks":\s*(\[.*?\])/s);
-  if (!captionMatch) {
-    console.log('[process-source] No captionTracks found in HTML');
-    return '';
-  }
-
-  try {
-    const tracks = JSON.parse(captionMatch[1]);
-    const track = tracks.find((t: { languageCode: string }) => t.languageCode?.startsWith('en')) || tracks[0];
-    if (!track?.baseUrl) return '';
-
-    console.log('[process-source] Found caption URL in HTML, fetching...');
-    // Note: This is synchronous context, we return a promise-like empty for now
-    // This path is a backup - the main player API path should work
-    return '';
-  } catch {
-    return '';
-  }
-}
-
-async function fetchTimedTextDirect(videoId: string): Promise<string> {
-  const url = `https://www.youtube.com/api/timedtext?v=${videoId}&lang=en&fmt=srv3`;
-  const res = await fetch(url);
-  if (!res.ok) {
-    console.log('[process-source] Direct timedtext failed:', res.status);
-    return '';
-  }
-  const xml = await res.text();
-  return parseTranscriptXml(xml);
 }
 
 function parseTranscriptXml(xml: string): string {
