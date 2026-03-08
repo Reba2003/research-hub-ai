@@ -160,9 +160,10 @@ When answering questions:
 2. Provide clear, well-structured answers using the FULL content available
 3. Use citations that include the source name AND page number when available, e.g. [Source Name, p.42] or [Source Name, pp.42-45]
 4. For PDF sources, always include page numbers in citations using the page info provided in source labels
-5. Be thorough and detailed - use all the information from the sources
-6. If you cannot find relevant information in the sources, say so honestly
-7. If an image is provided, analyze it thoroughly and relate it to the source materials when relevant
+5. For YouTube/video sources, include timestamps in citations, e.g. [Video Title, @2:30] or [Video Title, @1:15-3:45]
+6. Be thorough and detailed - use all the information from the sources
+7. If you cannot find relevant information in the sources, say so honestly
+8. If an image is provided, analyze it thoroughly and relate it to the source materials when relevant
 
 ${sourceContext}`;
     console.log(`Using model: ${config.name} (provider: ${model_provider}, hasImage: ${has_image})`);
