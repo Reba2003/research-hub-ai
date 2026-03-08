@@ -25,7 +25,7 @@ export function SourceLibrary({ className }: SourceLibraryProps) {
       setIsLoading(true);
       // Clear existing sources in store
       const store = useResearchStore.getState();
-      store.sources.forEach(s => store.removeSource(s.id));
+      store.clearSources();
 
       if (!activeConversationId) {
         setIsLoading(false);
