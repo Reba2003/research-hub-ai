@@ -87,117 +87,54 @@ async function extractYoutubeTranscript(url: string): Promise<string> {
     return '';
   }
 
-  console.log('[process-source] Fetching YouTube transcript for video:', videoId);
-
-  // Method 1: Use YouTube InnerTube API (most reliable from server-side)
-  try {
-    const transcript = await fetchViaInnerTube(videoId);
-    if (transcript) return transcript;
-  } catch (error) {
-    console.error('[process-source] InnerTube method failed:', error);
-  }
-
-  // Method 2: Direct timedtext API
-  try {
-    const transcript = await fetchTimedTextDirect(videoId);
-    if (transcript) return transcript;
-  } catch (error) {
-    console.error('[process-source] TimedText method failed:', error);
-  }
-
-  console.log('[process-source] All transcript extraction methods failed for:', videoId);
-  return '';
-}
-
-async function extractYoutubeTranscript(url: string, apiKey: string): Promise<string> {
-  const videoId = extractVideoId(url);
-  if (!videoId) {
-    console.error('[process-source] Could not extract YouTube video ID from:', url);
+  const SUPADATA_API_KEY = Deno.env.get('SUPADATA_API_KEY');
+  if (!SUPADATA_API_KEY) {
+    console.error('[process-source] SUPADATA_API_KEY not configured');
     return '';
   }
 
-  console.log('[process-source] Using Gemini to extract YouTube transcript for:', videoId);
+  console.log('[process-source] Fetching transcript via Supadata for:', videoId);
 
   try {
-    // Use Gemini via Lovable AI gateway — Gemini can natively process YouTube URLs
-    const response = await fetch('https://ai.gateway.lovable.dev/v1/chat/completions', {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${apiKey}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        model: 'google/gemini-2.5-flash',
-        messages: [
-          {
-            role: 'system',
-            content: `You are a transcript extraction assistant. Extract the COMPLETE spoken transcript from the YouTube video. 
-Format the output as timestamped segments like this:
-[0:00] First spoken words here...
-[0:15] Next segment of speech...
-[1:02] Continue with more speech...
-
-Rules:
-- Include ALL spoken content, do not summarize or skip anything
-- Use [M:SS] or [H:MM:SS] timestamp format
-- Start a new timestamped segment every 15-30 seconds approximately
-- If there are multiple speakers, note speaker changes
-- Capture the complete content faithfully, word for word when possible
-- Do NOT add any commentary, headers, or explanations - just the timestamped transcript`,
-          },
-          {
-            role: 'user',
-            content: `Extract the complete timestamped transcript from this YouTube video: https://www.youtube.com/watch?v=${videoId}`,
-          },
-        ],
-      }),
-    });
+    const response = await fetch(
+      `https://api.supadata.ai/v1/transcript?url=https://www.youtube.com/watch?v=${videoId}`,
+      {
+        headers: { 'x-api-key': SUPADATA_API_KEY },
+      }
+    );
 
     if (!response.ok) {
-      console.error('[process-source] Gemini transcript extraction failed:', response.status);
-      const errorText = await response.text();
-      console.error('[process-source] Error details:', errorText);
+      console.error('[process-source] Supadata API failed:', response.status, await response.text());
       return '';
     }
 
-    const result = await response.json();
-    const transcript = result.choices?.[0]?.message?.content || '';
+    const data = await response.json();
+    const content = data.content as Array<{ text: string; offset: number; duration: number }> | undefined;
 
-    if (!transcript || transcript.length < 50) {
-      console.log('[process-source] Gemini returned insufficient transcript content');
+    if (!content || content.length === 0) {
+      console.log('[process-source] Supadata returned no transcript content');
       return '';
     }
 
-    console.log(`[process-source] Gemini extracted transcript: ${transcript.length} chars`);
+    console.log(`[process-source] Supadata returned ${content.length} transcript segments`);
 
-    // Convert [M:SS] format to our <<<TIMESTAMP_M:SS>>> marker format
-    const lines = transcript.split('\n');
+    // Convert to our timestamped marker format
     const segments: string[] = [];
-    
-    for (const line of lines) {
-      const tsMatch = line.match(/^\[(\d+:\d{2}(?::\d{2})?)\]\s*(.*)/);
-      if (tsMatch) {
-        const timestamp = tsMatch[1];
-        const text = tsMatch[2].trim();
-        if (text) {
-          segments.push(`<<<TIMESTAMP_${timestamp}>>>\n${text}`);
-        }
-      } else if (line.trim()) {
-        // Append non-timestamped lines to previous segment
-        segments.push(line.trim());
+    for (const item of content) {
+      const totalSeconds = Math.floor(item.offset / 1000);
+      const timestamp = formatTimestamp(totalSeconds);
+      if (item.text.trim()) {
+        segments.push(`<<<TIMESTAMP_${timestamp}>>>\n${item.text.trim()}`);
       }
     }
 
-    if (segments.length === 0) {
-      // Fall back to raw transcript without markers
-      console.log('[process-source] Could not parse timestamps, using raw transcript');
-      return transcript;
-    }
-
-    console.log(`[process-source] Parsed ${segments.length} transcript segments with timestamps`);
+    console.log(`[process-source] Formatted ${segments.length} timestamped segments`);
     return segments.join('\n');
   } catch (error) {
-    console.error('[process-source] YouTube transcript extraction error:', error);
+    console.error('[process-source] Supadata transcript error:', error);
+    return '';
+  }
+}
     return '';
   }
 }
