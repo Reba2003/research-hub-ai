@@ -134,7 +134,7 @@ Deno.serve(async (req) => {
             pageInfo = pages.length === 1 ? `, p.${pages[0]}` : `, pp.${pages[0]}-${pages[pages.length - 1]}`;
           }
           const locationInfo = meta.location ? ` (${meta.location})` : '';
-          const chunk = `[Source ${chunks.length + 1} - ${meta.source_name || 'Unknown'}${chunkType}${locationInfo}${pageInfo}]: ${doc.content}`;
+          const chunk = `[Source ${chunks.length + 1} - ${meta.source_name || 'Unknown'}${chunkType}${locationInfo}${pageInfo}${timestampInfo}]: ${doc.content}`;
           if (totalChars + chunk.length > config.maxChars) {
             console.log(`Context truncated at ${totalChars} chars (limit: ${config.maxChars}) after ${chunks.length} chunks`);
             break;
