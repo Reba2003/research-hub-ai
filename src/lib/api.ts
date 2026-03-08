@@ -84,6 +84,7 @@ export async function fetchSources(): Promise<Source[]> {
     status: s.status as Source['status'],
     uploadedAt: new Date(s.created_at),
     size: s.size || undefined,
+    file_url: s.file_url || undefined,
   }));
 }
 
