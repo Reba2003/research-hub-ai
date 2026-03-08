@@ -13,6 +13,7 @@ export async function createSource(source: {
   file_path?: string;
   size?: number;
   metadata?: Record<string, unknown>;
+  conversation_id?: string;
 }): Promise<Source | null> {
   const { data: { user } } = await supabase.auth.getUser();
   if (!user) throw new Error('Not authenticated');
@@ -27,6 +28,7 @@ export async function createSource(source: {
       file_path: source.file_path,
       size: source.size,
       metadata: (source.metadata || {}) as Json,
+      conversation_id: source.conversation_id || null,
     }])
     .select()
     .single();
